@@ -9,7 +9,7 @@ services:
     envVars:
       - { key: GEMINI_API_KEY_TEXT, sync: false }
       - { key: GEMINI_API_KEY_TTS, sync: false }
-      - { key: GEMINI_MODEL, value: gemini-2.5-flash }
+      - { key: GEMINI_MODEL, value: gemini-3.8-flash }
       - { key: GEMINI_TTS_MODEL, value: gemini-2.5-flash-preview-tts }
       - { key: GEMINI_TTS_VOICE, value: Charon }
       - { key: TTS_DAILY_CAP, value: "60" }

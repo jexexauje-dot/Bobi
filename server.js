@@ -1,7 +1,7 @@
 // BOBI BACKEND — Gemini pilote le corps, la voix, les médias. Aucune dépendance autre qu'express+cors.
 import express from 'express'; import cors from 'cors'; import fs from 'fs'; import crypto from 'crypto';
 try { for (const l of fs.readFileSync('.env', 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=([^#\n]*)/); if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim(); } } catch {}
-const KEY = process.env.GEMINI_API_KEY_TEXT || process.env.GEMINI_API_KEY || '', TTS_KEY = process.env.GEMINI_API_KEY_TTS || KEY, TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', TTS_VOICE = process.env.GEMINI_TTS_VOICE || 'Charon', TTS_CAP = +process.env.TTS_DAILY_CAP || 60, MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash', YT = process.env.YOUTUBE_API_KEY || '';
+const KEY = process.env.GEMINI_API_KEY_TEXT || process.env.GEMINI_API_KEY || '', TTS_KEY = process.env.GEMINI_API_KEY_TTS || KEY, TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', TTS_VOICE = process.env.GEMINI_TTS_VOICE || 'Charon', TTS_CAP = +process.env.TTS_DAILY_CAP || 60, MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash', YT = process.env.YOUTUBE_API_KEY || '';
 const app = express(); app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' })); app.use(express.json({ limit: '200kb' }));
 app.get(['/', '/index.html'], (_, r) => r.sendFile(new URL('./index.html', import.meta.url).pathname)); // sert le site Bobi ; seul index.html est exposé (pas server.js ni .env)
 
@@ -94,7 +94,7 @@ async function gemini(contents, system) {
   if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
   for (let a = 0; a < 3; a++) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } } }) });
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(MODEL) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) } }) });
     if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 900)); continue; }
     const j = await r.json(); if (!r.ok) throw Object.assign(new Error(j.error?.message || 'gemini'), { status: r.status });
     try { return JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); } catch { if (a === 2) throw new Error('JSON invalide'); }
