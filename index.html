@@ -919,19 +919,34 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   /* ---------- voix Gemini (serveur) ; repli automatique sur la voix du navigateur ---------- */
   const UID = (() => { try { return localStorage.bobiId || (localStorage.bobiId = crypto.randomUUID()); } catch (e) { return 'anon' + Math.random().toString(36).slice(2, 10); } })();
-  let REMOTE_TTS = true, curAudio = null;
-  async function startRemote(text, offs, emo, my) {
-    const c = new AbortController(), t0 = setTimeout(() => c.abort(), 15000);
-    try {
-      const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: UID, text, emotion: emo || 'neutral' }), signal: c.signal });
-      if (!r.ok || !/audio/i.test(r.headers.get('content-type') || '')) {
-        let why = ''; try { why = (await r.json()).why || ''; } catch (e) { }
-        if (why === 'no_key' || why === 'daily_cap') REMOTE_TTS = false;
-        console.warn('Voix Gemini indisponible → voix du navigateur', why || r.status); return null;
+  let REMOTE_TTS = true, curAudio = null, voiceLock = false, ttsEpoch = 0, ttsChain = Promise.resolve();
+  const ttsJobs = new Map();
+  function fetchTts(text, emo) {
+    const k = (emo || 'neutral') + '|' + text; if (ttsJobs.has(k)) return ttsJobs.get(k);
+    const ep = ttsEpoch;
+    const job = ttsChain.then(async () => {
+      for (let a = 0; a < 2; a++) {
+        if (ep !== ttsEpoch || !REMOTE_TTS) return null;
+        const c = new AbortController(), t0 = setTimeout(() => c.abort(), 25000);
+        try {
+          const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: UID, text, emotion: emo || 'neutral' }), signal: c.signal });
+          if (r.ok && /audio/i.test(r.headers.get('content-type') || '')) return { dur: +r.headers.get('x-duration-ms') || 0, blob: await r.blob() };
+          let why = ''; try { why = (await r.json()).why || ''; } catch (e) { }
+          if (why === 'no_key' || why === 'daily_cap') { REMOTE_TTS = false; return null; }
+          console.warn('Voix Gemini indisponible', why || r.status);
+        } catch (e) { console.warn('Voix Gemini en échec', e); } finally { clearTimeout(t0); }
+        await new Promise(s => setTimeout(s, 2500));
       }
-      const dur = +r.headers.get('x-duration-ms') || 0, blob = await r.blob();
-      if (my !== runId) return null;
-      const a = new Audio(URL.createObjectURL(blob)); curAudio = a;
+      return null;
+    });
+    ttsChain = job.catch(() => { }); ttsJobs.set(k, job); if (ttsJobs.size > 30) ttsJobs.delete(ttsJobs.keys().next().value);
+    return job;
+  }
+  const prefetchBeats = beats => { if (soundOn && REMOTE_TTS) beats.forEach(b => b && b.say && fetchTts(b.say, b.ve)); };
+  async function startRemote(text, offs, emo, my) {
+    try {
+      const res = await fetchTts(text, emo); if (!res || my !== runId) return null;
+      const dur = res.dur, a = new Audio(URL.createObjectURL(res.blob)); curAudio = a;
       const o = { bCount: 0, onWord: null, ended: false, timers: [] }; o.started = Promise.resolve();
       o.done = new Promise(res => { a.onended = a.onerror = () => { o.ended = true; res(); }; });
       await a.play();
@@ -939,7 +954,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       offs.forEach((off, i) => o.timers.push(setTimeout(() => { o.bCount++; if (o.onWord) o.onWord(i); }, Math.max(0, total * off / Math.max(1, text.length)))));
       o.stop = () => { o.timers.forEach(clearTimeout); try { a.pause(); } catch (e) { } o.ended = true; };
       return o;
-    } catch (e) { console.warn('Voix Gemini en échec → voix du navigateur', e); return null; } finally { clearTimeout(t0); }
+    } catch (e) { console.warn('Lecture voix Gemini en échec', e); return null; }
   }
 
   /* ---------- moteur de parole : mots révélés un à un ---------- */
@@ -951,9 +966,11 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     const t = setTimeout(done, ms); pend.add(done);
   });
   const flush = () => { [...pend].forEach(f => f()); };
-  const follow = () => {
-    if (col.scrollHeight - col.scrollTop - col.clientHeight < 220) col.scrollTo({ top: col.scrollHeight, behavior: reduce || skipping ? 'auto' : 'smooth' });
-  };
+  let stick = true; // vrai tant que l'utilisateur n'a pas volontairement remonté
+  const nearBottom = () => col.scrollHeight - col.scrollTop - col.clientHeight < 90;
+  ['wheel', 'touchmove', 'keydown'].forEach(ev => col.addEventListener(ev, () => setTimeout(() => { stick = nearBottom(); }, 80), { passive: true }));
+  const follow = () => { if (stick) col.scrollTo({ top: col.scrollHeight, behavior: reduce || skipping ? 'auto' : 'smooth' }); };
+  if (window.ResizeObserver) new ResizeObserver(() => { if (stick) col.scrollTop = col.scrollHeight; }).observe(feed);
   async function speak(el, text, my, opts = {}) {
     const words = text.split(/\s+/).filter(Boolean);
     el.textContent = '';
@@ -962,7 +979,8 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     B.talking = true; setStatus('te parle', 'talking');
     let prev = null, shown = -1, offs = [], pos = 0;
     words.forEach(w => { pos = text.indexOf(w, pos); offs.push(pos); pos += w.length; });
-    let tts = (soundOn && ac && REMOTE_TTS) ? await startRemote(text, offs, opts.emo, my) : null;
+    let tts = (soundOn && ac && REMOTE_TTS && !voiceLock) ? await startRemote(text, offs, opts.emo, my) : null;
+    if (!tts && soundOn && ac && REMOTE_TTS && my === runId) voiceLock = true;
     if (!tts && my === runId && voiceOn()) tts = startTTS(text, words, offs);
     const reveal = i => { if (i <= shown) return; for (let k = shown + 1; k <= i; k++) spans[k].classList.add('in'); if (prev) prev.classList.remove('cur'); spans[i].classList.add('cur'); prev = spans[i]; shown = i; B.ampT = 1; if (!tts) blip(words[i], /\?$/.test(words[i])); if (!skipping && i % 3 === 0) follow(); };
     if (tts) { tts.onWord = i => { if (my === runId) reveal(i); }; await Promise.race([tts.started, new Promise(r => setTimeout(r, 1800))]); }
@@ -1273,17 +1291,22 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     return beats.length ? { beats, next: (Array.isArray(j.next) ? j.next : Array.isArray(j.suggestions) ? j.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean) } : null;
   }
   async function callApi(q) {
-    const ac = new AbortController(), to = setTimeout(() => ac.abort(), BOBI_API.timeoutMs);
-    try {
-      const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return normRes(await r.json());
-    } catch (e) { console.warn('API Bobi indisponible, repli local', e); return null; } finally { clearTimeout(to); }
+    for (let a = 0; a < 2; a++) {
+      const ac = new AbortController(), to = setTimeout(() => ac.abort(), BOBI_API.timeoutMs);
+      try {
+        const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
+        if (r.ok) return normRes(await r.json());
+        if (a === 0 && (r.status === 429 || r.status >= 500)) { await new Promise(s => setTimeout(s, 1500)); continue; }
+        let j = null; try { j = await r.json(); } catch (e) { }
+        return j && j.fallback ? normRes(j.fallback) : null;
+      } catch (e) { console.warn('API Bobi indisponible', e); if (a === 0) continue; return null; } finally { clearTimeout(to); }
+    }
+    return null;
   }
   async function playBeats(res) {
     if (!res || !res.beats || !res.beats.length) return;
     unlock(); cancelRun(); const my = ++runId; setEmpty(false); setBusy(true);
-    const block = addBlock(), spoken = [];
+    const block = addBlock(), spoken = []; voiceLock = false; prefetchBeats(res.beats);
     for (const raw of res.beats) {
       if (my !== runId) return;
       const b = normBeat(raw); applyBeat(b);
@@ -1337,7 +1360,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function setBusy(v) { busy = v; chat.classList.toggle('busy', v); sendBtn.disabled = !v && !ta.value.trim(); sendBtn.setAttribute('aria-label', v && !ta.value.trim() ? 'Passer' : 'Envoyer'); }
   function setEmpty(v) { chat.classList.toggle('empty', v); }
 
-  function addUser(t) { const d = document.createElement('div'); d.className = 'msg-u'; d.textContent = t; feed.appendChild(d); follow(); }
+  function addUser(t) { stick = true; const d = document.createElement('div'); d.className = 'msg-u'; d.textContent = t; feed.appendChild(d); follow(); }
   function addBlock() { const d = document.createElement('div'); d.className = 'msg-b'; feed.appendChild(d); return d; }
 
   const EMAP = { neutral: 'content', joy: 'enthousiaste', curious: 'curieux', excited: 'enthousiaste', thinking: 'pensif', empathy: 'content', proud: 'content', surprised: 'surpris', playful: 'enthousiaste', serious: 'pensif' };
@@ -1356,7 +1379,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   async function plan(q, topic, my) {
     if (topic) { await wait(650); return { beats: topic.beats, next: topic.next }; }
-    if (BOBI_API.endpoint) { const ra = await callApi(q); if (ra) return ra; }
+    if (BOBI_API.endpoint) { const ra = await callApi(q); if (ra) return ra; const t0 = findTopic(q); return t0 ? { beats: t0.beats, next: t0.next } : say1("Mon serveur ne répond pas pour l'instant (il se réveille peut-être). Redemande-moi dans quelques secondes !"); }
     const sample = await getSample();
     if (!sample) {
       const t = findTopic(q);
@@ -1391,7 +1414,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     if (my !== runId) { block.remove(); return; }
     dots.remove();
     if (!res) { block.remove(); setBusy(false); setStatus('prêt', ''); return; }
-    const spoken = [];
+    const spoken = []; voiceLock = false; prefetchBeats(res.beats);
     for (const b of res.beats) {
       if (my !== runId) return;
       applyBeat(b);
@@ -1412,7 +1435,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     }
     skipping = false; setBusy(false);
   }
-  function cancelRun() { if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
+  function cancelRun() { if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; ttsEpoch++; ttsJobs.clear(); skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
 
   /* ---------- accueil du chat ---------- */
   const GREETING = "Salut, moi c'est Bobi ! Choisis un sujet, ou pose-moi n'importe quelle question. Je t'explique, je te montre, et je recommence autant qu'il faut.";

@@ -78,30 +78,33 @@ async function resolveMedia(m) {
     let embeddable = false; try { const h = await fetch(u.origin, { method: 'HEAD', redirect: 'follow', signal: to(4000) }); const xfo = h.headers.get('x-frame-options'), csp = h.headers.get('content-security-policy') || ''; embeddable = !xfo && !/frame-ancestors/i.test(csp); } catch {}
     return { ...base, url: u.href, domain: u.hostname, logo: 'https://www.google.com/s2/favicons?sz=128&domain=' + u.hostname, embeddable, mode: embeddable ? 'iframe' : 'card' }; }); }
 }
+const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(undefined), ms))]);
 async function clean(raw) {
-  const beats = []; for (const b of (raw.beats || []).slice(0, 8)) {
+  const beats = [], medias = []; for (const b of (raw.beats || []).slice(0, 8)) {
     if (!b.say) continue; beats.push({ say: String(b.say).slice(0, 300), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
-      gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user', media: await resolveMedia(b.media) });
+      gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' });
+    medias.push(withTimeout(resolveMedia(b.media).catch(() => undefined), 7000));
   }
+  (await Promise.all(medias)).forEach((m, i) => { beats[i].media = m; });
   return { beats, suggestions: (raw.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) };
 }
 
 /* ---------- 5. Appel Gemini ---------- */
 async function gemini(contents, system) {
   if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
-  for (let a = 0; a < 2; a++) {
+  for (let a = 0; a < 3; a++) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 2048 } }) });
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } } }) });
     if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 900)); continue; }
     const j = await r.json(); if (!r.ok) throw Object.assign(new Error(j.error?.message || 'gemini'), { status: r.status });
-    try { return JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); } catch { if (a) throw new Error('JSON invalide'); }
+    try { return JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); } catch { if (a === 2) throw new Error('JSON invalide'); }
   } throw Object.assign(new Error('Gemini surchargé'), { status: 429 });
 }
 const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'diagram', title: 'Bobi', code: 'flowchart LR\n U[Toi]-->S[Serveur]-->G[Gemini]-->B[Bobi bouge et parle]' } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
 
 /* ---------- 6. Routes ---------- */
-const rate = new Map(); const limited = ip => { const n = Date.now(), a = (rate.get(ip) || []).filter(t => n - t < 6e4); a.push(n); rate.set(ip, a); return a.length > 20; };
+const rate = new Map(); const limited = (ip, max = 20) => { const n = Date.now(), a = (rate.get(ip) || []).filter(t => n - t < 6e4); a.push(n); rate.set(ip, a); return a.length > max; };
 app.get('/api/health', (_, r) => r.json({ ok: true, mock: !KEY, model: MODEL, tts: !!TTS_KEY, ttsModel: TTS_MODEL, voice: TTS_VOICE, youtube: !!YT }));
 app.get('/api/vocab', (_, r) => r.json({ bones: BONES, gestures: GESTURES, emotions: EMOTIONS, eases: EASES })); // pour que le front s'aligne
 app.post('/api/chat', async (req, res) => {
@@ -132,16 +135,16 @@ const audioCache = new Map();
 app.post('/api/tts', async (req, res) => {
   const fallback = (why, code = 503) => res.status(code).json({ fallback: true, why }); // le front utilise alors la voix du navigateur
   try {
-    if (!TTS_KEY) return fallback('no_key'); if (limited(req.ip + 'tts')) return fallback('rate', 429);
+    if (!TTS_KEY) return fallback('no_key'); if (limited(req.ip + 'tts', 60)) return fallback('rate', 429);
     const text = String(req.body.text || '').trim().slice(0, 400); if (!text) return res.status(400).json({ error: 'texte vide' });
     const emotion = STYLE[req.body.emotion] ? req.body.emotion : 'neutral', k = crypto.createHash('sha1').update(TTS_VOICE + emotion + text).digest('hex');
     let buf = audioCache.get(k), hit = !!buf;
     if (!buf) {
       const id = String(req.body.userId || '').replace(/[^\w-]/g, '').slice(0, 40), u = id ? user(id) : null, day = new Date().toISOString().slice(0, 10);
       if (u) { if (u.ttsDay !== day) { u.ttsDay = day; u.tts = 0; } if (u.tts >= TTS_CAP) return fallback('daily_cap', 429); u.tts++; }
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': TTS_KEY },
-        body: JSON.stringify({ contents: [{ parts: [{ text: `${STYLE[emotion]} : ${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) });
-      const j = await r.json(); if (!r.ok) return fallback(j.error?.message || 'tts_error', r.status === 429 ? 429 : 502);
+      let r, j; for (let a = 0; a < 2; a++) { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': TTS_KEY },
+        body: JSON.stringify({ contents: [{ parts: [{ text: `${STYLE[emotion]} : ${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) }); j = await r.json().catch(() => ({})); if (r.status !== 429 && r.status < 500) break; await new Promise(s => setTimeout(s, 1500)); }
+      if (!r.ok) return fallback(j.error?.message || 'tts_error', r.status === 429 ? 429 : 502);
       const d = j.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data; if (!d) return fallback('no_audio', 502);
       buf = wav(Buffer.from(d, 'base64')); audioCache.set(k, buf); if (audioCache.size > 80) audioCache.delete(audioCache.keys().next().value); save();
     }
