@@ -778,8 +778,27 @@ const SCENES = {
     const pts = (Array.isArray(p.points) ? p.points : []).slice(0, 4).map(x => S(x, 80)).filter(Boolean);
     return `<div class="cpt"><div class="em" aria-hidden="true">${esc(S(p.emoji || p.center, 4) || '💡')}</div><ul>${pts.map((t, i) => `<li style="animation-delay:${.25 + i * .2}s">${esc(t)}</li>`).join('')}</ul></div>`;
   }
+  ,
+  image(p) {
+    const u = /^https:\/\//.test(p.url) ? p.url : ''; if (!u) throw 0;
+    return `<img src="${esc(u)}" alt="${esc(S(p.title, 80))}" loading="lazy" style="width:100%;border-radius:12px;display:block">` + (p.credit ? `<p class="cap">Image : ${esc(S(p.credit, 80))} (Wikimedia Commons)</p>` : '');
+  },
+  link(p) {
+    const u = /^https?:\/\//.test(p.url) ? p.url : ''; if (!u) throw 0;
+    return `<p><a href="${esc(u)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-weight:600">${esc(S(p.label, 60))} ↗</a></p>`;
+  }
 };
-const TAGS = { projectile: 'Simulation', cycle: 'Cycle', wave: 'Ondes', bars: 'Comparaison', timeline: 'Frise', compare: 'Face à face', concept: 'En bref' };
+const TAGS = { projectile: 'Simulation', cycle: 'Cycle', wave: 'Ondes', bars: 'Comparaison', timeline: 'Frise', compare: 'Face à face', concept: 'En bref', image: 'Image', link: 'Lien' };
+const adaptMedia = m => {
+  if (!m || typeof m !== 'object') return null;
+  if (SCENES[m.type]) return m;
+  if (m.type === 'chart' && m.chart && Array.isArray(m.chart.labels)) return { type: 'bars', title: m.title, caption: m.caption, items: m.chart.labels.map((l, i) => ({ label: l, value: m.chart.values[i] })) };
+  if (m.type === 'image' && m.url) return { type: 'image', title: m.title, caption: m.caption, url: m.url, credit: m.credit, page: m.page };
+  if (m.type === 'video' && (m.embed || m.search)) return { type: 'link', kind: 'Vidéo', title: m.title, caption: m.caption, url: m.search || m.embed, label: 'Voir la vidéo' };
+  if (m.type === 'site' && m.url) return { type: 'link', kind: 'Site', title: m.title || m.domain, caption: m.caption, url: m.url, label: 'Ouvrir ' + (m.domain || 'le site') };
+  return null;
+};
+
 function buildFigure(m) {
   if (!m || typeof m !== 'object' || !SCENES[m.type]) return null;
   let body; try { body = SCENES[m.type](m); } catch (e) { return null; }
@@ -897,6 +916,32 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     return o;
   }
 
+
+  /* ---------- voix Gemini (serveur) ; repli automatique sur la voix du navigateur ---------- */
+  const UID = (() => { try { return localStorage.bobiId || (localStorage.bobiId = crypto.randomUUID()); } catch (e) { return 'anon' + Math.random().toString(36).slice(2, 10); } })();
+  let REMOTE_TTS = true, curAudio = null;
+  async function startRemote(text, offs, emo, my) {
+    const c = new AbortController(), t0 = setTimeout(() => c.abort(), 15000);
+    try {
+      const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: UID, text, emotion: emo || 'neutral' }), signal: c.signal });
+      if (!r.ok || !/audio/i.test(r.headers.get('content-type') || '')) {
+        let why = ''; try { why = (await r.json()).why || ''; } catch (e) { }
+        if (why === 'no_key' || why === 'daily_cap') REMOTE_TTS = false;
+        console.warn('Voix Gemini indisponible → voix du navigateur', why || r.status); return null;
+      }
+      const dur = +r.headers.get('x-duration-ms') || 0, blob = await r.blob();
+      if (my !== runId) return null;
+      const a = new Audio(URL.createObjectURL(blob)); curAudio = a;
+      const o = { bCount: 0, onWord: null, ended: false, timers: [] }; o.started = Promise.resolve();
+      o.done = new Promise(res => { a.onended = a.onerror = () => { o.ended = true; res(); }; });
+      await a.play();
+      const total = (dur || (isFinite(a.duration) ? a.duration * 1000 : text.length * 62)) * .96;
+      offs.forEach((off, i) => o.timers.push(setTimeout(() => { o.bCount++; if (o.onWord) o.onWord(i); }, Math.max(0, total * off / Math.max(1, text.length)))));
+      o.stop = () => { o.timers.forEach(clearTimeout); try { a.pause(); } catch (e) { } o.ended = true; };
+      return o;
+    } catch (e) { console.warn('Voix Gemini en échec → voix du navigateur', e); return null; } finally { clearTimeout(t0); }
+  }
+
   /* ---------- moteur de parole : mots révélés un à un ---------- */
   let runId = 0, skipping = false, ctl = null, mood = null;
   const pend = new Set();
@@ -917,7 +962,8 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     B.talking = true; setStatus('te parle', 'talking');
     let prev = null, shown = -1, offs = [], pos = 0;
     words.forEach(w => { pos = text.indexOf(w, pos); offs.push(pos); pos += w.length; });
-    const tts = voiceOn() ? startTTS(text, words, offs) : null;
+    let tts = (soundOn && ac && REMOTE_TTS) ? await startRemote(text, offs, opts.emo, my) : null;
+    if (!tts && my === runId && voiceOn()) tts = startTTS(text, words, offs);
     const reveal = i => { if (i <= shown) return; for (let k = shown + 1; k <= i; k++) spans[k].classList.add('in'); if (prev) prev.classList.remove('cur'); spans[i].classList.add('cur'); prev = spans[i]; shown = i; B.ampT = 1; if (!tts) blip(words[i], /\?$/.test(words[i])); if (!skipping && i % 3 === 0) follow(); };
     if (tts) { tts.onWord = i => { if (my === runId) reveal(i); }; await Promise.race([tts.started, new Promise(r => setTimeout(r, 1800))]); }
     for (let i = 0; i < spans.length; i++) {
@@ -1214,7 +1260,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
      Mode requête/réponse : window.Bobi.config.endpoint = 'https://…/chat'  → POST { message, history, state } → réponse JSON ci-dessus.
      Mode poussé : Bobi.connect('wss://…')  ou  Bobi.connect('https://…/events') (SSE).
      Synchro voix externe (TTS) : Bobi.amp(niveau) à chaque mot / enveloppe audio fait bouger la tête et allumer les oreillettes. */
-  const BOBI_API = { endpoint: '', headers: {}, timeoutMs: 25000 };
+  const BOBI_API = { endpoint: '/api/chat', headers: {}, timeoutMs: 45000 }; // cerveau Gemini (même serveur que ce site)
   let bws = null, bes = null;
   function lookFrom(v) {
     if (typeof v === 'string') B.lookMode = ['user', 'pointer', 'away', 'auto'].includes(v) ? v : 'auto';
@@ -1224,12 +1270,12 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function normRes(j) {
     const arr = Array.isArray(j && j.beats) ? j.beats : (j && (j.say || j.text) ? [{ say: j.say || j.text, emotion: j.emotion, gesture: j.gesture, look: j.look, media: j.media }] : []);
     const beats = arr.slice(0, 6).map(normBeat).filter(b => b.say);
-    return beats.length ? { beats, next: (Array.isArray(j.next) ? j.next : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean) } : null;
+    return beats.length ? { beats, next: (Array.isArray(j.next) ? j.next : Array.isArray(j.suggestions) ? j.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean) } : null;
   }
   async function callApi(q) {
     const ac = new AbortController(), to = setTimeout(() => ac.abort(), BOBI_API.timeoutMs);
     try {
-      const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ message: q, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
+      const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return normRes(await r.json());
     } catch (e) { console.warn('API Bobi indisponible, repli local', e); return null; } finally { clearTimeout(to); }
@@ -1242,7 +1288,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       if (my !== runId) return;
       const b = normBeat(raw); applyBeat(b);
       const p = document.createElement('p'); p.className = 'say2'; block.appendChild(p);
-      await speak(p, b.say, my); spoken.push(b.say);
+      await speak(p, b.say, my, { emo: b.ve }); spoken.push(b.say);
       if (my !== runId) return;
       const fig = buildFigure(b.media);
       if (fig) { block.appendChild(fig); fx('fig'); follow(); setTimeout(follow, 350); await wait(1500); } else await wait(260);
@@ -1294,10 +1340,17 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function addUser(t) { const d = document.createElement('div'); d.className = 'msg-u'; d.textContent = t; feed.appendChild(d); follow(); }
   function addBlock() { const d = document.createElement('div'); d.className = 'msg-b'; feed.appendChild(d); return d; }
 
-  const normBeat = b => ({
-    say: S(b && b.say, 260), emotion: EMO[b && b.emotion] ? b.emotion : 'content',
-    gesture: ['nod', 'hop', 'walk', 'lean', 'point', 'wave', 'shake', 'present', 'shrug'].includes(b && b.gesture) ? b.gesture : 'nod', media: b && b.media && typeof b.media === 'object' ? b.media : null, look: b && b.look !== undefined ? b.look : null
-  });
+  const EMAP = { neutral: 'content', joy: 'enthousiaste', curious: 'curieux', excited: 'enthousiaste', thinking: 'pensif', empathy: 'content', proud: 'content', surprised: 'surpris', playful: 'enthousiaste', serious: 'pensif' };
+  const GMAP = { idle: 'nod', think: 'nod', bow: 'nod', thumbs_up: 'nod', clap: 'hop', celebrate: 'hop', surprise: 'hop', dance: 'hop', lean_in: 'lean', hands_hips: 'present' };
+  const normBeat = b => {
+    const e0 = b && b.emotion, g0 = b && b.gesture, em = EAMAP(e0), g = GMAP[g0] || g0;
+    return {
+      say: S(b && b.say, 260), emotion: EMO[em] ? em : 'content', ve: S((b && b.ve) || e0, 20),
+      gesture: ['nod', 'hop', 'walk', 'lean', 'point', 'wave', 'shake', 'present', 'shrug'].includes(g) ? g : 'nod',
+      media: adaptMedia(b && b.media), look: b && b.look !== undefined ? b.look : null
+    };
+  };
+  const EAMAP = e => EMAP[e] || e;
   const findTopic = q => { const l = q.toLowerCase(); return TOPICS.find(t => t.keys.some(k => l.includes(k))); };
   const say1 = (say, emotion = 'pensif') => ({ beats: [{ say, emotion, gesture: 'nod', media: null }], next: TOPICS.slice(0, 3).map(t => t.title) });
 
@@ -1343,7 +1396,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       if (my !== runId) return;
       applyBeat(b);
       const p = document.createElement('p'); p.className = 'say2'; block.appendChild(p);
-      await speak(p, b.say, my); spoken.push(b.say);
+      await speak(p, b.say, my, { emo: b.ve }); spoken.push(b.say);
       if (my !== runId) return;
       const fig = buildFigure(b.media);
       if (fig) { block.appendChild(fig); fx('fig'); B.hopT = B.hopT < 0 ? B.hopT : B.hopT; follow(); setTimeout(follow, 350); await wait(1500); }
@@ -1359,7 +1412,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     }
     skipping = false; setBusy(false);
   }
-  function cancelRun() { if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
+  function cancelRun() { if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
 
   /* ---------- accueil du chat ---------- */
   const GREETING = "Salut, moi c'est Bobi ! Choisis un sujet, ou pose-moi n'importe quelle question. Je t'explique, je te montre, et je recommence autant qu'il faut.";
