@@ -90,16 +90,18 @@ async function clean(raw) {
 }
 
 /* ---------- 5. Appel Gemini ---------- */
+const MODELS = [...new Set([MODEL, ...(process.env.GEMINI_FALLBACKS || 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-flash-latest,gemini-2.5-flash').split(',').map(x => x.trim()).filter(Boolean)])];
 async function gemini(contents, system) {
-  let last = null;
   if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
-  for (let a = 0; a < 3; a++) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(MODEL) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) } }) });
-    if (r.status === 429 || r.status >= 500) { last = { status: r.status, msg: (await r.text().catch(() => '')).slice(0, 400) }; console.error('gemini', last.status, last.msg); await new Promise(s => setTimeout(s, 900 * (a + 1))); continue; }
-    const j = await r.json(); if (!r.ok) throw Object.assign(new Error(j.error?.message || 'gemini'), { status: r.status });
-    try { return JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); } catch { if (a === 2) throw new Error('JSON invalide'); }
-  } throw Object.assign(new Error('Gemini ' + (last?.status || '') + ' ' + (last?.msg || 'surchargé')), { status: 429 });
+  let last = null;
+  for (const model of MODELS) for (let a = 0; a < 2; a++) { // modèle surchargé / indisponible -> on passe au suivant
+    let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) } }) }); }
+    catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); break; }
+    if (!r.ok) { last = { status: r.status, msg: (await r.text().catch(() => '')).slice(0, 300) }; console.error('gemini', model, last.status, last.msg); if (r.status === 429 || r.status >= 500) { if (a === 0) { await new Promise(s => setTimeout(s, 700)); continue; } } break; }
+    try { const j = await r.json(); const out = JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); if (model !== MODEL) console.log('secours utilisé :', model); return out; } catch { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'JSON invalide'); }
+  }
+  throw Object.assign(new Error('Gemini ' + (last?.status || '') + ' ' + (last?.msg || '')), { status: last?.status === 429 ? 429 : 502 });
 }
 const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'diagram', title: 'Bobi', code: 'flowchart LR\n U[Toi]-->S[Serveur]-->G[Gemini]-->B[Bobi bouge et parle]' } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
