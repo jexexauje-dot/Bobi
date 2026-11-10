@@ -91,14 +91,15 @@ async function clean(raw) {
 
 /* ---------- 5. Appel Gemini ---------- */
 async function gemini(contents, system) {
+  let last = null;
   if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
   for (let a = 0; a < 3; a++) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(MODEL) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) } }) });
-    if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 900)); continue; }
+    if (r.status === 429 || r.status >= 500) { last = { status: r.status, msg: (await r.text().catch(() => '')).slice(0, 400) }; console.error('gemini', last.status, last.msg); await new Promise(s => setTimeout(s, 900 * (a + 1))); continue; }
     const j = await r.json(); if (!r.ok) throw Object.assign(new Error(j.error?.message || 'gemini'), { status: r.status });
     try { return JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); } catch { if (a === 2) throw new Error('JSON invalide'); }
-  } throw Object.assign(new Error('Gemini surchargé'), { status: 429 });
+  } throw Object.assign(new Error('Gemini ' + (last?.status || '') + ' ' + (last?.msg || 'surchargé')), { status: 429 });
 }
 const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'diagram', title: 'Bobi', code: 'flowchart LR\n U[Toi]-->S[Serveur]-->G[Gemini]-->B[Bobi bouge et parle]' } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
@@ -106,6 +107,12 @@ const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé G
 /* ---------- 6. Routes ---------- */
 const rate = new Map(); const limited = (ip, max = 20) => { const n = Date.now(), a = (rate.get(ip) || []).filter(t => n - t < 6e4); a.push(n); rate.set(ip, a); return a.length > max; };
 app.get('/api/health', (_, r) => r.json({ ok: true, mock: !KEY, model: MODEL, tts: !!TTS_KEY, ttsModel: TTS_MODEL, voice: TTS_VOICE, youtube: !!YT }));
+app.get('/api/diag', async (_, r) => { // diagnostic temporaire : à supprimer une fois que tout marche
+  const out = { model: MODEL, ttsModel: TTS_MODEL, textKey: !!KEY, ttsKey: !!TTS_KEY }, base = 'https://generativelanguage.googleapis.com/v1beta';
+  try { const x = await fetch(`${base}/models/${MODEL}:generateContent`, { method: 'POST', signal: to(20000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: JSON.stringify({ contents: [{ parts: [{ text: 'Dis juste ok' }] }] }) }); out.textTest = { status: x.status, body: (await x.text()).slice(0, 500) }; } catch (e) { out.textTest = { error: e.message }; }
+  try { const x = await fetch(`${base}/models?pageSize=200`, { signal: to(15000), headers: { 'x-goog-api-key': KEY } }); const j = await x.json(); out.modelsAvailable = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')); if (!x.ok) out.modelsError = j.error?.message; } catch (e) { out.modelsError = e.message; }
+  r.json(out);
+});
 app.get('/api/vocab', (_, r) => r.json({ bones: BONES, gestures: GESTURES, emotions: EMOTIONS, eases: EASES })); // pour que le front s'aligne
 app.post('/api/chat', async (req, res) => {
   try {
