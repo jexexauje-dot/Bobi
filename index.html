@@ -1,4 +1,17 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
+/* Bobi réfléchit : il rétrécit aux 2/3, des icônes flottent derrière lui */
+#c3d,.flat{transition:scale .55s cubic-bezier(.2,.8,.2,1)}#c3d{transform-origin:50% 78%}.flat{transform-origin:50% 100%}
+.cstage.thinking #c3d,.cstage.thinking .flat{scale:.67}
+.tfx{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.tfx .ti{position:absolute;display:grid;place-items:center;width:clamp(38px,5.2vw,54px);aspect-ratio:1;border-radius:16px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(8px);font-size:clamp(20px,2.8vw,28px);box-shadow:0 6px 18px rgba(0,0,0,.12);animation:tiIn .55s cubic-bezier(.2,.9,.3,1.4) both,tiFloat 3.2s ease-in-out .55s infinite}
+.tfx .ti img{width:58%;height:58%;border-radius:6px}.tfx .ti.out{animation:tiOut .35s ease-in both}
+@keyframes tiIn{from{opacity:0;transform:scale(.2) translateY(20px)}to{opacity:1;transform:none}}
+@keyframes tiFloat{50%{transform:translateY(-7px) rotate(2deg)}}
+@keyframes tiOut{to{opacity:0;transform:scale(.3)}}
+.thinkrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:6px 0 14px}.thinkrow .dots{padding:0}
+.tlabel{font-family:var(--mono);font-size:12.5px;color:var(--mute)}.tlabel b{color:var(--accent);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+@media (prefers-reduced-motion:reduce){.tfx .ti{animation:none}#c3d,.flat{transition:none}}
+</style></head><body>
 <title>Bobi</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1005,6 +1018,34 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     cstage.classList.toggle('talking', cls === 'talking'); cstage.classList.toggle('thinking', cls === 'thinking');
   }
 
+  /* ---------- Bobi réfléchit : icônes derrière lui, étapes réelles du serveur, poses variées ---------- */
+  const TH_ICONS = [[/eau|pluie|nuage|mer\b|oc[ée]an/, '💧'], [/ciel|lumi[eè]re|couleur|soleil/, '🌅'], [/histoire|r[ée]volution|guerre|roi|date|napol/, '🏛️'], [/balle|lancer|sport|foot|angle|vitesse/, '⚽'], [/math|calcul|nombre|fraction|[ée]quation|g[ée]om/, '🧮'], [/plan[eè]te|espace|lune|mars|[ée]toile|fus[ée]e/, '🪐'], [/animal|chat|chien|oiseau|dinosaure|poisson/, '🐾'], [/cuisine|recette|g[aâ]teau|manger/, '🍳'], [/musique|chanson|guitare|piano/, '🎵'], [/code|programm|python|javascript|web|app/, '💻'], [/corps|sant[eé]|c[œo]eur|cerveau|m[ée]decin/, '🫀'], [/anglais|langue|grammaire|traduc/, '🔤'], [/argent|euro|prix|[ée]conomie|banque/, '💶'], [/terre|volcan|s[ée]isme|climat|m[ée]t[ée]o/, '🌍'], [/physique|force|[ée]nergie|atome|[ée]lectri/, '⚛️'], [/chimie|mol[ée]cule|acide/, '🧪']];
+  const TH_PHASES = ['Je lis ta question…', 'Je cherche dans ma mémoire…', 'Je choisis la meilleure explication…', 'Je mets mes idées dans l\'ordre…', 'Je prépare de quoi te le montrer…'];
+  const TH_SLOTS = [[12, 20], [80, 16], [6, 50], [86, 46], [20, 72], [74, 70]];
+  const TH_POSES = [{ t: .9, l: .06, y: .25 }, { t: -1, l: .03, y: -.25, g: 'nod' }, { t: .5, l: .1, g: 'shrug' }, { t: -.6, l: 0, y: .2 }];
+  let thTimers = [], thFx = null, thLabel = null, thN = 0, thLast = 0;
+  function thText(t) { if (thLabel) thLabel.textContent = ' · ' + t; }
+  function thAdd(icon, logo) {
+    if (!thFx || thN >= TH_SLOTS.length) return; const [x, y] = TH_SLOTS[thN++], d = document.createElement('div');
+    d.className = 'ti'; d.style.left = x + '%'; d.style.top = y + '%'; d.style.animationDelay = '0s,' + (Math.random() * 1.5).toFixed(2) + 's';
+    if (logo && /^https:/.test(logo)) { const im = document.createElement('img'); im.alt = ''; im.src = logo; im.onerror = () => { im.remove(); d.textContent = icon || '🌐'; }; d.appendChild(im); } else d.textContent = icon || '✨';
+    thFx.appendChild(d);
+  }
+  function thStep(st) { if (!st || !st.label || !thFx) return; thLast = Date.now(); thText(String(st.label).slice(0, 70)); thAdd(String(st.icon || '').slice(0, 4), st.logo); if (st.icon === '✅') B.hopT = 0; }
+  function thinkStart(q, labelEl) {
+    thinkStop(); thLabel = labelEl; thN = 0; thLast = 0;
+    thFx = document.createElement('div'); thFx.className = 'tfx'; thFx.setAttribute('aria-hidden', 'true'); cstage.insertBefore(thFx, cstage.firstChild);
+    const l = q.toLowerCase(), icons = ['🔎']; TH_ICONS.forEach(([re, ic]) => { if (re.test(l) && icons.length < 3) icons.push(ic); }); if (icons.length < 3) icons.push('📚', '💡');
+    icons.forEach((ic, i) => thTimers.push(setTimeout(() => thAdd(ic), 400 + i * 700)));
+    let pi = 0, po = 0; thText(TH_PHASES[0]);
+    thTimers.push(setInterval(() => { if (Date.now() - thLast > 2200 && pi < TH_PHASES.length - 1) thText(TH_PHASES[++pi]); }, 1900));
+    thTimers.push(setInterval(() => { const p = TH_POSES[po++ % TH_POSES.length]; B.tiltT = p.t; B.leanT = p.l; B.yawT = isWide() ? (p.y || 0) : 0; B.gest = p.g || null; B.gT = 0; }, 1500));
+  }
+  function thinkStop() {
+    thTimers.forEach(t => { clearTimeout(t); clearInterval(t); }); thTimers = []; thLabel = null;
+    if (thFx) { const f = thFx; thFx = null; f.querySelectorAll('.ti').forEach(e => e.classList.add('out')); setTimeout(() => f.remove(), 400); }
+  }
+
   /* ---------- Bobi : état d'animation ---------- */
   const B = { rig: null, gest: null, gT: 0, c: {}, discSpin: 0, tx: 0, x: 0, limit: .3, talking: false, thinking: false, amp: 0, ampT: 0, lean: 0, leanT: 0, tilt: 0, tiltT: 0, yawT: 0, energy: 1, hopT: -1, walkAmt: 0, phase: 0, face: 0, lookMode: 'auto', lookXY: { x: 0, y: 0 }, ptr: { x: 0, y: 0, t: -1e9 }, crouch: 0, dI: 0 };
   const EMO = { curieux: { tilt: .8, lean: .06 }, content: { tilt: 0, lean: 0 }, surpris: { hop: 1, lean: -.05 }, pensif: { tilt: -1, lean: .03 }, enthousiaste: { hop: 1, energy: 1.9 } };
@@ -1294,7 +1335,16 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     for (let a = 0; a < 2; a++) {
       const ac = new AbortController(), to = setTimeout(() => ac.abort(), BOBI_API.timeoutMs);
       try {
-        const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
+        const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, stream: true, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
+        if (r.ok && /ndjson/.test(r.headers.get('content-type') || '') && r.body && r.body.getReader) {
+          const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '', result = null;
+          for (;;) {
+            const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;
+            while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!line) continue; let m; try { m = JSON.parse(line); } catch (e) { continue; }
+              if (m.step) thStep(m.step); else if (m.done) result = normRes(m.done); else if (m.error) result = m.fallback ? normRes(m.fallback) : null; }
+          }
+          return result;
+        }
         if (r.ok) return normRes(await r.json());
         if (a === 0 && (r.status === 429 || r.status >= 500)) { await new Promise(s => setTimeout(s, 1500)); continue; }
         let j = null; try { j = await r.json(); } catch (e) { }
@@ -1407,10 +1457,10 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     q = q.trim(); if (!q) return;
     unlock(); cancelRun(); const my = ++runId;
     setEmpty(false); addUser(q); ta.value = ''; autosize(); setBusy(true); fx('send');
-    const block = addBlock(); const dots = document.createElement('span'); dots.className = 'dots'; dots.innerHTML = '<i></i><i></i><i></i>'; block.appendChild(dots);
-    B.thinking = true; B.tiltT = .8; setStatus('réfléchit…', 'thinking'); follow();
+    const block = addBlock(); const dots = document.createElement('div'); dots.className = 'thinkrow'; dots.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="tlabel"><b>Thinking</b><span class="tt"></span></span>'; block.appendChild(dots);
+    B.thinking = true; B.tiltT = .8; setStatus('réfléchit…', 'thinking'); follow(); thinkStart(q, dots.querySelector('.tt'));
     const res = await plan(q, topic, my);
-    B.thinking = false;
+    B.thinking = false; thinkStop();
     if (my !== runId) { block.remove(); return; }
     dots.remove();
     if (!res) { block.remove(); setBusy(false); setStatus('prêt', ''); return; }
@@ -1435,7 +1485,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     }
     skipping = false; setBusy(false);
   }
-  function cancelRun() { if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; ttsEpoch++; ttsJobs.clear(); skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
+  function cancelRun() { thinkStop(); if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; ttsEpoch++; ttsJobs.clear(); skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
 
   /* ---------- accueil du chat ---------- */
   const GREETING = "Salut, moi c'est Bobi ! Choisis un sujet, ou pose-moi n'importe quelle question. Je t'explique, je te montre, et je recommence autant qu'il faut.";

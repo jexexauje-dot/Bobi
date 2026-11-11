@@ -67,8 +67,12 @@ function cleanTimeline(tl) {
 const cache = new Map(); const cached = async (k, fn) => { if (cache.has(k)) return cache.get(k); const v = await fn().catch(() => null); cache.set(k, v); if (cache.size > 500) cache.delete(cache.keys().next().value); return v; };
 const to = (ms) => AbortSignal.timeout(ms);
 
-async function resolveMedia(m) {
+async function resolveMedia(m, emit = () => {}) {
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
+  if (m.type === 'image') emit({ icon: '🖼️', label: 'Je cherche une image : ' + String(m.query || '').slice(0, 40) });
+  else if (m.type === 'video') emit({ icon: '▶️', label: 'Je cherche une vidéo sur le sujet' });
+  else if (m.type === 'site') { const u0 = safeUrl(m.query); if (u0) emit({ icon: '🌐', label: 'Je regarde le site ' + u0.hostname, logo: 'https://www.google.com/s2/favicons?sz=64&domain=' + u0.hostname }); }
+  else emit({ icon: '📊', label: 'Je dessine un schéma' + (base.title ? ' : ' + base.title.slice(0, 40) : '') });
   if (SCENES.includes(m.type)) {
     const sl = (a, n) => Array.isArray(a) ? a.slice(0, n) : [], T = (x, n) => String(x ?? '').slice(0, n), side = o => o && { label: T(o.label, 28), points: sl(o.points, 3).map(x => T(x, 70)) };
     return { ...base, center: T(m.center, 4), emoji: T(m.emoji, 4), unit: T(m.unit, 12),
@@ -90,23 +94,26 @@ async function resolveMedia(m) {
     return { ...base, url: u.href, domain: u.hostname, logo: 'https://www.google.com/s2/favicons?sz=128&domain=' + u.hostname, embeddable, mode: embeddable ? 'iframe' : 'card' }; }); }
 }
 const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(undefined), ms))]);
-async function clean(raw) {
+async function clean(raw, emit = () => {}) {
   const beats = [], medias = []; for (const b of (raw.beats || []).slice(0, 8)) {
     if (!b.say) continue; beats.push({ say: String(b.say).slice(0, 300), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
       gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' });
-    medias.push(withTimeout(resolveMedia(b.media).catch(() => undefined), 7000));
+    medias.push(withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 7000));
   }
-  (await Promise.all(medias)).forEach((m, i) => { beats[i].media = m; });
+  (await Promise.all(medias)).forEach((m, i) => { beats[i].media = m;
+    if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée sur Wikimedia Commons' });
+    else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' }); });
   return { beats, suggestions: (raw.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) };
 }
 
 /* ---------- 5. Appel Gemini ---------- */
 const noThink = new Set();
 const MODELS = [...new Set([MODEL, ...(process.env.GEMINI_FALLBACKS || 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-flash-latest,gemini-2.5-flash').split(',').map(x => x.trim()).filter(Boolean)])];
-async function gemini(contents, system) {
+async function gemini(contents, system, emit = () => {}) {
   if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
-  let last = null;
-  for (const model of MODELS) for (let a = 0; a < 2; a++) { // modèle surchargé / indisponible -> on passe au suivant
+  let last = null; emit({ icon: '🧠', label: 'Je réfléchis à ta question' });
+  for (const model of MODELS) for (let a = 0; a < 2; a++) {
+    if (a === 0 && model !== MODEL) emit({ icon: '🔁', label: 'Mon premier cerveau est occupé, j\'en prends un autre' }); else if (a === 1) emit({ icon: '⏳', label: 'Le serveur est occupé, je réessaie' }); // modèle surchargé / indisponible -> on passe au suivant
     let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : noThink.has(model) ? {} : { thinkingConfig: { thinkingLevel: 'minimal' } }) } }) }); }
     catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); break; }
@@ -129,18 +136,23 @@ app.get('/api/diag', async (_, r) => { // diagnostic temporaire : à supprimer u
 });
 app.get('/api/vocab', (_, r) => r.json({ bones: BONES, gestures: GESTURES, emotions: EMOTIONS, eases: EASES })); // pour que le front s'aligne
 app.post('/api/chat', async (req, res) => {
+  const stream = !!req.body.stream; let started = false;
+  const head = () => { if (!started) { started = true; res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' }); } };
+  const emit = o => { if (stream) { head(); res.write(JSON.stringify({ step: o }) + '\n'); } };
+  const send = (obj, code = 200) => { if (stream) { head(); res.write(JSON.stringify(obj) + '\n'); res.end(); } else res.status(code).json(obj); };
   try {
-    if (limited(req.ip)) return res.status(429).json({ error: 'Trop de messages, respire une minute 🙂' });
+    if (limited(req.ip)) return res.status(429).json({ error: 'Trop de messages, respire une minute 🙂', fallback: { beats: [{ say: 'Doucement, je suis un peu essoufflé ! Redemande-moi dans une minute.', emotion: 'playful', gesture: 'shrug' }] } });
     const text = String(req.body.message || '').trim().slice(0, 1500); if (!text) return res.status(400).json({ error: 'message vide' });
     const id = String(req.body.userId || '').replace(/[^\w-]/g, '').slice(0, 40) || crypto.randomUUID(), u = user(id);
     const ctx = `[Contexte: visite n°${u.visits}, série de ${u.streak} jour(s). Ce que tu sais de l'utilisateur: ${u.memory.slice(-15).join('; ') || 'rien encore'}.]`;
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
-    const out = await clean(await gemini(contents, SYSTEM));
+    emit({ icon: '📖', label: 'Je lis ta question' });
+    const out = await clean(await gemini(contents, SYSTEM, emit), emit);
     if (!out.beats.length) throw new Error('réponse vide');
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: out.beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
     for (const f of out.memory) if (!u.memory.includes(f)) u.memory.push(f); u.memory = u.memory.slice(-40); out.userId = id; out.streak = u.streak; out.visits = u.visits;
-    save(); delete out.memory; res.json(out);
-  } catch (e) { console.error(e.message); res.status(e.status === 429 ? 429 : 502).json({ error: 'Bobi réfléchit trop fort, réessaie.', fallback: { beats: [{ say: 'Oups, j\'ai eu un petit court-circuit. Redis-moi ça ?', emotion: 'empathy', gesture: 'shrug' }] } }); }
+    save(); delete out.memory; send(stream ? { done: out } : out);
+  } catch (e) { console.error(e.message); const p = { error: 'Bobi réfléchit trop fort, réessaie.', fallback: { beats: [{ say: 'Oups, j\'ai eu un petit court-circuit. Redis-moi ça ?', emotion: 'empathy', gesture: 'shrug' }] } }; send(p, e.status === 429 ? 429 : 502); }
 });
 app.post('/api/greet', (req, res) => { // salutation de retour = levier de fidélisation
   const id = String(req.body.userId || '').replace(/[^\w-]/g, '').slice(0, 40) || crypto.randomUUID(), u = user(id); save();
