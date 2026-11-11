@@ -16,7 +16,7 @@ const MEDIA = ['image', 'video', 'site', 'chart', 'anim', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
-const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'topic', 'suggestions', 'teaser', 'memory'], properties: {
+const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['mediaQuery', 'beats', 'topic', 'suggestions', 'teaser', 'memory'], properties: {
   beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'intensity', 'gesture', 'look', 'media', 'timeline'], properties: {
     say: S('STRING', { description: 'Une à deux phrases dites à voix haute. Courte (10-25 mots) pour une question simple ; 20 à 35 mots, riche en faits, pour une explication.' }),
     emotion: S('STRING', { enum: EMOTIONS }),
@@ -39,6 +39,7 @@ const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 't
       waves: S('ARRAY', { description: 'wave : 1 à 3 ondes', items: S('OBJECT', { properties: { label: S('STRING'), wl: S('NUMBER', { description: '0.6 à 4' }) } }) }),
       angles: S('ARRAY', { items: S('NUMBER') }), v0: S('NUMBER'),
       chart: S('OBJECT', { properties: { kind: S('STRING', { enum: ['bar', 'line', 'pie'] }), labels: S('ARRAY', { items: S('STRING') }), values: S('ARRAY', { items: S('NUMBER') }) } }) } }) } }) }),
+  mediaQuery: S('STRING', { description: 'Requête anglaise PRÉCISE du sujet principal de la réponse pour chercher image/vidéo (ex: "Chelyabinsk meteor", "Battle of Verdun"). Vide si question simple.' }),
   topic: S('STRING', { description: 'Nom court (2-4 mots) du sujet appris, pour la collection de cartes. Vide si question simple.' }),
   suggestions: S('ARRAY', { description: '2 à 3 relances courtes que l\'utilisateur peut cliquer.', items: S('STRING') }),
   teaser: S('STRING', { description: 'Phrase qui donne envie de revenir (ex: demain on voit X).' }),
@@ -52,6 +53,7 @@ MÉDIAS = ta signature : quand tu EXPLIQUES un sujet (histoire, science, philoso
 'anim' : bg (space|sky|ocean|earth|night|lab|paper|fire) + 2 à 6 'actors' {emoji, x0,y0 → x1,y1 en % du cercle (0-100), size 6-60, delay, dur (secondes), spin, trail, fade, label}. Exemple météorite : bg space ; 🌍 size 46 fixe (x0=x1=50,y0=y1=62) ; ☄️ size 16 de (8,6) à (48,52), dur 2.4, trail true ; 💥 size 34 en (50,56), delay 2.4, dur 0.8, fade pulse. Mets les acteurs fixes en premier, les mobiles ensuite, les effets d'impact à la fin.
 Schémas (si c'est un processus, une chronologie, une comparaison, des chiffres) : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Option : 'site' (URL si l'utilisateur parle d'un site). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Mets look='media' quand un média est affiché.
 STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. LIBERTÉ ET VÉRITÉ : tu réponds à TOUTES les questions, y compris sensibles, tabous ou controversées, franchement et sans moraliser : tu distingues faits établis, hypothèses et opinions, tu dis « je ne sais pas » quand c'est le cas, tu ne mens jamais pour faire plaisir.
+COHÉRENCE : chaque média doit illustrer EXACTEMENT ce que dit la phrase du beat et le sujet de la conversation. Sa query contient toujours le nom du sujet (ex: pour une météorite → "meteorite", "Chelyabinsk meteor"), jamais un mot vague. Au moindre doute, pas de média.
 MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' ou un schéma (cycle, timeline…).
 RELANCES : tes 3 suggestions sont des ouvertures « jusqu'où ? » qui donnent envie d'aller plus loin (le détail qui choque, la question suivante naturelle). Une des suggestions peut être un défi : « Je te l'explique à ma façon, corrige-moi ». Remplis 'topic' quand tu as enseigné quelque chose.
 Réponds UNIQUEMENT en JSON conforme au schéma.`;
@@ -78,6 +80,9 @@ const cache = new Map(); const cached = async (k, fn) => { if (cache.has(k)) ret
 const to = (ms) => AbortSignal.timeout(ms);
 
 const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, getJson = async u => (await fetch(u, { headers: UA, signal: to(4000) })).json();
+const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'photo', 'image', 'video', 'file', 'des', 'les', 'une', 'dans', 'pour', 'avec', 'sur']);
+const relevant = (title, q) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; return ks.some(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)); };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 async function resolveMedia(m, emit = () => {}) {
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
@@ -108,12 +113,12 @@ async function resolveMedia(m, emit = () => {}) {
   if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikipédia en/fr EN PARALLÈLE (premier qui répond), sinon Wikimedia Commons
     const wiki = async lang => {
       const r = await getJson(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4&prop=pageimages&piprop=thumbnail&pithumbsize=900&gsrsearch=` + encodeURIComponent(m.query));
-      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source); if (!p) throw 0;
+      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source && relevant(p.title, m.query)); if (!p) throw 0;
       return { ...base, url: p.thumbnail.source, credit: 'Wikipédia : ' + p.title, page: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(p.title.replace(/ /g, '_')) };
     };
     return await Promise.any([wiki('en'), wiki('fr')]).catch(async () => {
       const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'));
-      const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl); if (!p) return undefined; const i = p.imageinfo[0];
+      const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl && relevant(p.title, m.query)); if (!p) return undefined; const i = p.imageinfo[0];
       return { ...base, url: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl };
     }); });
   if (m.type === 'video' && m.query) return cached('vid:' + m.query, async () => {
@@ -122,7 +127,7 @@ async function resolveMedia(m, emit = () => {}) {
       const v = r?.items?.[0]; if (v) return { ...base, title: base.title || v.snippet.title, embed: 'https://www.youtube-nocookie.com/embed/' + v.id.videoId, search }; }
     // sans clé : vidéos libres de Wikimedia Commons (lecture directe dans le cercle de Bobi)
     const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=640&gsrsearch=' + encodeURIComponent(m.query + ' filetype:video')).catch(() => null);
-    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
+    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => relevant(p.title, m.query) && /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
     const p = vids.find(p => /webm|mp4/.test(p.imageinfo[0].mime)) || vids[0];
     if (p) { const i = p.imageinfo[0]; return { ...base, file: i.url, mime: i.mime, poster: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl, search }; }
     return { ...base, search }; });
@@ -164,8 +169,9 @@ function beatScanner() { // extrait les objets du tableau "beats" au fur et à m
     return out;
   };
 }
-async function geminiStream(contents, system, onBeat, emit = () => {}) {
-  if (!KEY) { const m = mock(contents.at(-1)?.parts?.[0]?.text || ''); for (const b of m.beats) onBeat(b); return m; }
+async function geminiStream(contents, system, onBeat, emit = () => {}, onQuery = null) {
+  let qDone = false; const gotQ = q => { if (!qDone) { qDone = true; onQuery && onQuery(q); } };
+  if (!KEY) { const m = mock(contents.at(-1)?.parts?.[0]?.text || ''); gotQ(''); for (const b of m.beats) onBeat(b); return m; }
   let last = null; emit({ icon: '🧠', label: 'Je réfléchis à ta question' });
   for (const model of MODELS) {
     if ((blocked.get(model) || 0) > Date.now()) continue; // quota épuisé : on saute ce modèle sans perdre de temps
@@ -193,11 +199,11 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
             finish = j.candidates?.[0]?.finishReason || finish; blockWhy = j.promptFeedback?.blockReason || blockWhy;
             const t = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''); if (!t) continue;
             if (!text) { clearTimeout(firstT); console.log(`⏱ ${model} : premier texte en ${Date.now() - t0} ms`); }
-            text += t; for (const b of scan(t)) { if (!got) console.log(`⏱ ${model} : première phrase en ${Date.now() - t0} ms`); got++; onBeat(b); }
+            text += t; if (!qDone) { const mm = /"mediaQuery"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text); if (mm) gotQ(mm[1]); } for (const b of scan(t)) { if (!got) console.log(`⏱ ${model} : première phrase en ${Date.now() - t0} ms`); got++; onBeat(b); }
           }
         }
         let full = null; try { full = JSON.parse(text); } catch { }
-        if (!got && full?.beats?.length) for (const b of full.beats) { got++; onBeat(b); }
+        if (full && !qDone) gotQ(full.mediaQuery || ''); if (!got && full?.beats?.length) for (const b of full.beats) { got++; onBeat(b); }
         if (!got) { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'réponse vide ou JSON invalide', { finish, blockWhy, longueur: text.length, debut: text.slice(0, 160) }); if (/quota|exceeded/i.test(String(last?.msg)) && last?.status === 429) { blocked.set(model, Date.now() + pauseFor(String(last.msg))); break; } continue; }
         console.log(`⏱ ${model} : réponse complète en ${Date.now() - t0} ms (${got} phrases)`); if (model !== MODEL) console.log('secours utilisé :', model);
         return full || {};
@@ -233,15 +239,15 @@ app.post('/api/chat', async (req, res) => {
     emit({ icon: '📖', label: 'Je lis ta question' });
     const beats = []; let chain = Promise.resolve();
     const simple = text.length < 14 || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
-    const topicQ = text.replace(/[?!.]/g, ' ').replace(/\b(s'il (te|vous) pla[iî]t|montre[- ]moi|montre|affiche|fais[- ]moi voir|explique[- ]moi|explique|raconte[- ]moi|raconte|c'est quoi|qu'est[- ]ce que|qu'est[- ]ce qu|c'est qui|une?|des?|du|le|la|les|l'|d'|l|image|photo|vid[ée]o|sch[ée]ma|animation|sur|de|moi|me|avec|et|pour|comment|pourquoi|fonctionne|marche)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
-    const wantVid = /vid[ée]o|film|extrait/i.test(text), wantImg = /image|photo|montre|voir|à quoi ça ressemble/i.test(text);
-    const fbImg = !simple && topicQ ? resolveMedia({ type: 'image', query: topicQ }).catch(() => undefined) : Promise.resolve(undefined);
-    const fbVid = !simple && topicQ ? resolveMedia({ type: 'video', query: topicQ }).catch(() => undefined) : Promise.resolve(undefined);
+    const wantVid = /vid[ée]o|film|extrait/i.test(text);
+    let resolveQ; const qP = new Promise(r => { resolveQ = r; });
+    const fbImg = qP.then(q => q && !simple ? resolveMedia({ type: 'image', query: q }) : undefined).catch(() => undefined);
+    const fbVid = qP.then(q => q && !simple ? resolveMedia({ type: 'video', query: q }) : undefined).catch(() => undefined);
     const onBeat = raw => { const job = cleanBeat(raw, emit).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle des beats suivants */ chain = chain.then(async () => { if (beats.length >= 8) return; const b = await job; if (!b) return;
       if (!b.media && beats.length >= 1 && beats.length <= 3 && !beats.some(x => x.media && x.media.type === 'image') && !(wantVid && !beats.some(x => x.media && x.media.type === 'video'))) { const f = await withTimeout(fbImg, 4000); if (f && f.url) b.media = f; }
       else if (!b.media && beats.length >= 1 && beats.length <= 4 && !beats.some(x => x.media && x.media.type === 'video')) { const f = await withTimeout(fbVid, 4000); if (f && (f.file || f.embed)) b.media = f; }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
-    const tail = await geminiStream(contents, SYSTEM, onBeat, emit); await chain;
+    const tail = await geminiStream(contents, SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80))); resolveQ(''); await chain;
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
