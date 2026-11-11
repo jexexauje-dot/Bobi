@@ -386,6 +386,13 @@ body.in-chat{overflow:hidden}
 .an.bg-fire{background:radial-gradient(circle at 50% 80%,#ff9a3c,#9b1c0a 60%,#2a0603)}
 @media (max-width:899px){.orbm{width:auto;height:92%;top:52%}.cstage.explain #c3d,.cstage.explain .flat{translate:30% 6%}}
 @media (prefers-reduced-motion:reduce){.orbm,.cstage #c3d,.cstage .flat{transition:none}}
+
+.octl{position:absolute;top:6%;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:6}
+.obtn{width:30px;height:30px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(5,8,22,.6);color:#fff;font-size:14px;cursor:pointer;backdrop-filter:blur(8px);display:grid;place-items:center;padding:0}
+.obtn:hover{background:var(--accent)}
+.orbm .mplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;font-size:30px;z-index:6;background:rgba(5,8,22,.7)}
+.cstage.explain .orbm.big{position:fixed!important;left:50%!important;top:50%!important;width:min(94vw,1100px)!important;height:auto!important;max-height:90vh;aspect-ratio:16/9;border-radius:18px;z-index:99999;translate:-50% -50%;box-shadow:0 0 0 100vmax rgba(0,0,0,.82)}
+.orbm.big video,.orbm.big iframe{object-fit:contain;background:#000}
 </style>
 
 <main class="wrap" id="top">
@@ -842,6 +849,7 @@ const adaptMedia = m => {
   if (SCENES[m.type]) return m;
   if (m.type === 'chart' && m.chart && Array.isArray(m.chart.labels)) return { type: 'bars', title: m.title, caption: m.caption, items: m.chart.labels.map((l, i) => ({ label: l, value: m.chart.values[i] })) };
   if (m.type === 'image' && m.url) return { type: 'image', title: m.title, caption: m.caption, url: m.url, credit: m.credit, page: m.page };
+  if (m.type === 'music' && (m.audio || m.embed)) return { type: 'music', title: m.title, artist: m.artist, cover: m.cover, audio: m.audio, embed: m.embed, page: m.page, credit: m.credit };
   if (m.type === 'video' && (m.embed || m.file)) return { type: 'video', title: m.title, caption: m.caption, embed: m.embed, file: m.file, mime: m.mime, poster: m.poster, credit: m.credit, page: m.page };
   if (m.type === 'anim' && Array.isArray(m.actors) && m.actors.length) return { type: 'anim', title: m.title, bg: m.bg, actors: m.actors };
   if (m.type === 'video' && (m.embed || m.search)) return { type: 'link', kind: 'Vidéo', title: m.title, caption: m.caption, url: m.search || m.embed, label: 'Voir la vidéo' };
@@ -949,7 +957,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     if (!TTS) return; const vs = TTS.getVoices().filter(v => /^fr/i.test(v.lang)); if (!vs.length) return;
     const FEM = /am[ée]lie|marie|audrey|denise|[ée]loise|julie|hortense|female|femme|aur[ée]lie|c[ée]line|virginie|lea|léa|sylvie|claire|jolie/i, MALE = /thomas|paul|henri|daniel|claude|antoine|nicolas|male|homme|bernard|guillaume|remy|rémy|mathieu|alain|gérard|gerard|jérôme|jerome|fabrice|maurice|thierry|jacques|jean|luc|hugo|lucas|yannick/i;
     const score = v => (/natural|neural|multilingual/i.test(v.name) ? 40 : 0) + (/online/i.test(v.name) ? 15 : 0) + (/google/i.test(v.name) ? 14 : 0) - (/^Microsoft/i.test(v.name) && !/online|natural/i.test(v.name) ? 10 : 0) + (MALE.test(v.name) ? 6 : 0) - (FEM.test(v.name) ? 3 : 0) + (/fr[-_]fr/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 4 : 0);
-    voice = vs.sort((a, b) => score(b) - score(a))[0]; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name); voiceNat = /natural|neural|online|google/i.test(voice.name);
+    const best = vs.sort((a, b) => score(b) - score(a))[0]; let saved = null; try { saved = vs.find(v => v.voiceURI === localStorage.bobiVoiceURI); localStorage.bobiVoiceURI = (saved || best).voiceURI; } catch (e) { } voice = saved || best; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name); voiceNat = /natural|neural|online|google/i.test(voice.name);
   }
   if (TTS) { pickVoice(); TTS.addEventListener && TTS.addEventListener('voiceschanged', pickVoice); }
   const voiceOn = () => !!(TTS && voice && soundOn && ac);
@@ -961,15 +969,16 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       u.onstart = () => o._st(); u.onend = u.onerror = () => { o.ended = true; o._st(); res(); };
       u.onboundary = e => { if (e.name && e.name !== 'word') return; o.bCount++; let k = 0; while (k + 1 < offs.length && offs[k + 1] <= e.charIndex) k++; if (o.onWord) o.onWord(k); };
     });
-    try { TTS.cancel(); TTS.speak(u); } catch (e) { o.ended = true; o.done = Promise.resolve(); }
-    o.stop = () => { try { TTS.cancel(); } catch (e) { } };
+    try { TTS.cancel(); TTS.speak(u); o.ka = setInterval(() => { try { if (TTS.speaking && !TTS.paused) { TTS.pause(); TTS.resume(); } } catch (e) { } }, 9000); } catch (e) { o.ended = true; o.done = Promise.resolve(); }
+    o.done = o.done.then(() => clearInterval(o.ka));
+    o.stop = () => { clearInterval(o.ka); try { TTS.cancel(); } catch (e) { } };
     return o;
   }
 
 
   /* ---------- voix Gemini (serveur) ; repli automatique sur la voix du navigateur ---------- */
   const UID = (() => { try { return localStorage.bobiId || (localStorage.bobiId = crypto.randomUUID()); } catch (e) { return 'anon' + Math.random().toString(36).slice(2, 10); } })();
-  let REMOTE_TTS = true, curAudio = null, voiceLock = false, ttsEpoch = 0, ttsChain = Promise.resolve();
+  let REMOTE_TTS = (() => { try { const q = new URLSearchParams(location.search).get('voix'); if (q) localStorage.bobiVoice = q; return localStorage.bobiVoice === 'gemini'; } catch (e) { return false; } })(), curAudio = null, voiceLock = false, ttsEpoch = 0, ttsChain = Promise.resolve();
   const ttsJobs = new Map();
   function fetchTts(text, emo) {
     const k = (emo || 'neutral') + '|' + text; if (ttsJobs.has(k)) return ttsJobs.get(k);
@@ -1025,8 +1034,9 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   /* ---------- cercle média : Bobi se réduit à 1/7 et montre animation / image / vidéo ---------- */
   let orbEl = null, orbTimer = 0, orbAnims = [];
-  const ORB_TYPES = ['image', 'video', 'anim'];
-  function ensureOrb() { if (orbEl) return orbEl; orbEl = document.createElement('div'); orbEl.className = 'orbm'; orbEl.title = 'Toucher pour fermer'; orbEl.addEventListener('click', () => hideOrb()); cstage.appendChild(orbEl); return orbEl; }
+  const ORB_TYPES = ['image', 'video', 'anim', 'music'];
+  let orbAudio = null, bigOn = false;
+  function ensureOrb() { if (orbEl) return orbEl; orbEl = document.createElement('div'); orbEl.className = 'orbm'; orbEl.addEventListener('click', e => { if (e.target.closest('.obtn,video,iframe')) return; toggleBig(); }); cstage.appendChild(orbEl); return orbEl; }
   function stopAnims() { orbAnims.forEach(a => { try { a.cancel(); } catch (e) { } }); orbAnims = []; }
   function renderAnim(box, m) {
     box.className = 'an bg-' + (/^(space|sky|ocean|earth|night|lab|paper|fire)$/.test(m.bg) ? m.bg : 'night');
@@ -1051,18 +1061,36 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       mk(false, 0);
     });
   }
+  function unmuteOrb() {
+    if (!orbEl) return; const v = orbEl.querySelector('video'); if (v) { v.muted = false; v.volume = 1; const p = v.play(); if (p && p.catch) p.catch(() => { v.muted = true; }); }
+    const f = orbEl.querySelector('iframe'); if (f && f.contentWindow) { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*'); f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*'); } catch (e) { } }
+  }
+  function toggleBig(force) { const on = force !== undefined ? force : !bigOn; if (!orbEl || on === bigOn) return; bigOn = on; orbEl.classList.toggle('big', on); if (on) unmuteOrb(); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && bigOn) toggleBig(false); });
+  document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) unmuteOrb(); });
+  function orbCtl(o) { const c = document.createElement('div'); c.className = 'octl'; const mk = (t, lab, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'obtn'; b.textContent = t; b.setAttribute('aria-label', lab); b.addEventListener('click', e => { e.stopPropagation(); fn(); }); c.appendChild(b); }; mk('⤢', 'Agrandir (avec le son)', () => toggleBig()); mk('✕', 'Fermer', () => hideOrb()); o.appendChild(c); }
+  function ytFrame(src, title) { const f = document.createElement('iframe'); f.src = src; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = title || 'Vidéo'; return f; }
   function showOrb(m) {
-    const o = ensureOrb(); clearTimeout(orbTimer); stopAnims(); o.innerHTML = '';
+    const o = ensureOrb(); clearTimeout(orbTimer); stopAnims(); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } o.innerHTML = ''; delete o.dataset.music;
     const cap = t => { if (!t) return; const c = document.createElement('div'); c.className = 'cap'; c.textContent = S(t, 90); o.appendChild(c); };
     let ok = false;
     if (m.type === 'image' && /^https:\/\//.test(m.url || '')) { const im = new Image(); im.alt = S(m.title, 80); im.referrerPolicy = 'no-referrer'; im.onerror = () => { if (o.contains(im)) hideOrb(); }; im.src = m.url; o.appendChild(im); cap(m.credit ? 'Image : ' + m.credit : m.title); ok = true; }
-    else if (m.type === 'video' && /^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { const f = document.createElement('iframe'); f.src = m.embed + '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1'; f.allow = 'autoplay; encrypted-media; picture-in-picture'; f.allowFullscreen = true; f.title = S(m.title, 80) || 'Vidéo'; o.appendChild(f); cap(m.title); ok = true; }
+    else if (m.type === 'video' && /^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.appendChild(ytFrame(m.embed + '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1', S(m.title, 80))); cap(m.title); ok = true; }
     else if (m.type === 'video' && /^https:\/\//.test(m.file || '')) { const v = document.createElement('video'); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.controls = true; if (/^https:\/\//.test(m.poster || '')) v.poster = m.poster; v.onerror = () => { if (o.contains(v)) hideOrb(); }; v.src = m.file; o.appendChild(v); const pr = v.play(); if (pr && pr.catch) pr.catch(() => { }); cap(m.credit ? 'Vidéo : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'anim') { const d = document.createElement('div'); o.appendChild(d); cstage.classList.add('explain'); renderAnim(d, m); cap(m.title); ok = true; }
-    if (ok) cstage.classList.add('explain'); return ok;
+    else if (m.type === 'music') {
+      const cv = new Image(); cv.alt = S(m.title, 80); cv.referrerPolicy = 'no-referrer'; if (/^https:\/\//.test(m.cover || '')) cv.src = m.cover; else cv.style.background = '#1b1b2a'; o.appendChild(cv); o.dataset.music = '1';
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'obtn mplay'; b.textContent = '▶'; b.setAttribute('aria-label', 'Lancer la musique');
+      b.addEventListener('click', e => { e.stopPropagation();
+        if (/^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.innerHTML = ''; o.dataset.music = '1'; o.appendChild(ytFrame(m.embed + '?autoplay=1&playsinline=1&rel=0&enablejsapi=1', S(m.title, 80))); orbCtl(o); cap([m.title, m.artist].filter(Boolean).join(' · ')); return; }
+        if (!orbAudio && /^https:\/\//.test(m.audio || '')) { orbAudio = new Audio(m.audio); orbAudio.onended = () => { b.textContent = '▶'; }; }
+        if (!orbAudio) return; if (orbAudio.paused) { orbAudio.play().catch(() => { }); b.textContent = '⏸'; } else { orbAudio.pause(); b.textContent = '▶'; } });
+      o.appendChild(b); cap([m.title, m.artist].filter(Boolean).join(' · ') + (m.credit && !m.embed ? ' (' + m.credit + ')' : '')); ok = true;
+    }
+    if (ok) { orbCtl(o); cstage.classList.add('explain'); } return ok;
   }
-  function hideOrb() { clearTimeout(orbTimer); cstage.classList.remove('explain'); const o = orbEl; setTimeout(() => { if (o && !cstage.classList.contains('explain')) { stopAnims(); o.innerHTML = ''; } }, 700); }
-  function orbLater() { clearTimeout(orbTimer); if (cstage.classList.contains('explain')) orbTimer = setTimeout(hideOrb, 9000); }
+  function hideOrb() { clearTimeout(orbTimer); toggleBig(false); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } cstage.classList.remove('explain'); const o = orbEl; setTimeout(() => { if (o && !cstage.classList.contains('explain')) { stopAnims(); o.innerHTML = ''; } }, 700); }
+  function orbLater() { clearTimeout(orbTimer); if (!cstage.classList.contains('explain') || !orbEl) return; if (orbEl.querySelector('video,iframe')) { unmuteOrb(); return; } if (orbEl.dataset.music) return; orbTimer = setTimeout(hideOrb, 9000); }
   function presentMedia(m, block) {
     if (!m) return false;
     if (ORB_TYPES.includes(m.type)) { if (showOrb(m)) { fx('fig'); return true; } return false; }
@@ -1090,7 +1118,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       const w = words[i];
       await wait(tts ? 70 + w.length * 62 + (/[.!?…]$/.test(w) ? 260 : /[,;:]$/.test(w) ? 130 : 0) : 190 + w.length * 21 + (/[.!?…]$/.test(w) ? 340 : /[,;:]$/.test(w) ? 170 : 0));
     }
-    if (tts && !skipping) { const guard = new Promise(r => setTimeout(r, 25000)); await Promise.race([tts.done, guard, new Promise(r => { const t = setInterval(() => { if (skipping || my !== runId) { clearInterval(t); r(); } }, 120); tts.done.then(() => clearInterval(t)); })]); }
+    if (tts && !skipping) { const guard = new Promise(r => setTimeout(r, tts.ka ? Math.min(25000, 3000 + words.length * 520) : 25000)); await Promise.race([tts.done, guard, new Promise(r => { const t = setInterval(() => { if (skipping || my !== runId) { clearInterval(t); r(); } }, 120); tts.done.then(() => clearInterval(t)); })]); }
     if (tts) tts.stop();
     if (my !== runId) return;
     for (let i = shown + 1; i < spans.length; i++) spans[i].classList.add('in');
