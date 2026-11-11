@@ -145,9 +145,10 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
   for (const model of MODELS) {
     if ((blocked.get(model) || 0) > Date.now()) continue; // quota épuisé : on saute ce modèle sans perdre de temps
     for (let a = 0; a < 2; a++) {
-      let got = 0, text = '', finish = '', blockWhy = '';
+      let got = 0, text = '', finish = '', blockWhy = '', slow = false; const t0 = Date.now(), ctl = new AbortController();
+      const firstT = setTimeout(() => { slow = true; ctl.abort(); }, 14000), totalT = setTimeout(() => ctl.abort(), 75000);
       try {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', signal: to(90000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
           body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 6144, ...thinkCfg(model) } }) });
         if (!r.ok) {
           const msg = (await r.text().catch(() => '')).slice(0, 500); last = { status: r.status, msg }; console.error('gemini', model, r.status, msg.replace(/\s+/g, ' ').slice(0, 260));
@@ -166,15 +167,16 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
             if (j.error) { last = { status: j.error.code || 502, msg: j.error.message || 'erreur' }; console.error('gemini', model, 'erreur dans le flux', String(last.msg).replace(/\s+/g, ' ').slice(0, 200)); continue; }
             finish = j.candidates?.[0]?.finishReason || finish; blockWhy = j.promptFeedback?.blockReason || blockWhy;
             const t = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''); if (!t) continue;
-            text += t; for (const b of scan(t)) { got++; onBeat(b); }
+            if (!text) { clearTimeout(firstT); console.log(`⏱ ${model} : premier texte en ${Date.now() - t0} ms`); }
+            text += t; for (const b of scan(t)) { if (!got) console.log(`⏱ ${model} : première phrase en ${Date.now() - t0} ms`); got++; onBeat(b); }
           }
         }
         let full = null; try { full = JSON.parse(text); } catch { }
         if (!got && full?.beats?.length) for (const b of full.beats) { got++; onBeat(b); }
         if (!got) { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'réponse vide ou JSON invalide', { finish, blockWhy, longueur: text.length, debut: text.slice(0, 160) }); if (/quota|exceeded/i.test(String(last?.msg)) && last?.status === 429) { blocked.set(model, Date.now() + pauseFor(String(last.msg))); break; } continue; }
-        if (model !== MODEL) console.log('secours utilisé :', model);
+        console.log(`⏱ ${model} : réponse complète en ${Date.now() - t0} ms (${got} phrases)`); if (model !== MODEL) console.log('secours utilisé :', model);
         return full || {};
-      } catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); if (got) return {}; break; } // déjà en train de parler : on garde ce qui est arrivé
+      } catch (e) { last = { status: 504, msg: slow ? 'trop lent (14 s sans réponse)' : e.message }; console.error('gemini', model, last.msg); if (got) return {}; if (slow) blocked.set(model, Date.now() + 5 * 6e4); break; } finally { clearTimeout(firstT); clearTimeout(totalT); } // déjà en train de parler : on garde ce qui est arrivé
     }
   }
   throw Object.assign(new Error('Gemini ' + (last?.status || 'indisponible') + ' ' + (last?.msg || '').replace(/\s+/g, ' ').slice(0, 200)), { status: last?.status === 429 || [...blocked.values()].some(t => t > Date.now()) ? 429 : 502 });
