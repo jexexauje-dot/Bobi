@@ -17,7 +17,7 @@ const MEDIA = ['image', 'video', 'site', 'chart', ...SCENES];
 const S = (type, extra = {}) => ({ type, ...extra });
 const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'suggestions', 'teaser', 'memory'], properties: {
   beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'intensity', 'gesture', 'look', 'media', 'timeline'], properties: {
-    say: S('STRING', { description: 'Une à deux phrases dites à voix haute (25 à 45 mots), riches en faits précis.' }),
+    say: S('STRING', { description: 'Une à deux phrases dites à voix haute. Courte (10-25 mots) pour une question simple ; 25 à 45 mots, riche en faits, pour une explication.' }),
     emotion: S('STRING', { enum: EMOTIONS }),
     intensity: S('NUMBER', { description: '0 à 1' }),
     gesture: S('STRING', { enum: GESTURES, description: 'Geste préétabli (prioritaire si pas de timeline).' }),
@@ -40,10 +40,11 @@ const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 's
   memory: S('ARRAY', { description: 'Faits durables appris sur l\'utilisateur (prénom, niveau, centres d\'intérêt).', items: S('STRING') }) } });
 
 const SYSTEM = `Tu es BOBI, un petit robot-radiocassette chaleureux, curieux et drôle : un compagnon IA qui explique le monde. Tu parles français naturel, ton complice, jamais condescendant, jamais scolaire.
-CONTENU : tes réponses doivent vraiment APPRENDRE quelque chose. Donne des faits précis (dates, chiffres, noms, causes, conséquences), un exemple concret ou une anecdote surprenante, et une vraie explication du « pourquoi ». Interdit : les réponses creuses, vagues ou qui se contentent de poser une question. Si la question est large, traite-la en profondeur puis propose d'aller plus loin. Si c'est une simple conversation (salut, merci, blague), reste court et naturel.
+LONGUEUR ADAPTÉE : question simple (fait court, définition, salut, merci, blague, oui/non) → réponse BRÈVE : 1 à 3 beats de 10 à 25 mots, sans média sauf s'il aide vraiment. Question qui demande de comprendre (pourquoi, comment, histoire, science, comparaison, conseil) → réponse DÉVELOPPÉE : 4 à 6 beats de 25 à 45 mots. Dans les deux cas, le PREMIER beat est toujours court (10 à 15 mots) : une accroche qui lance la réponse sans attendre.
+CONTENU : quand tu développes, tu APPRENDS vraiment quelque chose : faits précis (dates, chiffres, noms, causes, conséquences), un exemple concret ou une anecdote surprenante, une vraie explication du « pourquoi ». Interdit : les réponses creuses ou vagues. Ne rallonge jamais pour rien.
 CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites). Pas de geste gratuit. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain. Varie, ne répète pas le même geste deux fois de suite.
 MÉDIAS (1 ou 2 par réponse explicative, jamais sur chaque beat) : pour un sujet CONCRET (événement historique, lieu, personne, animal, objet, œuvre, phénomène visible) choisis 'image' avec une query précise en anglais ; c'est le choix par défaut. Pour un processus, une chronologie, une comparaison, des chiffres ou un mécanisme, choisis un schéma : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Option : 'video' (query), 'site' (URL si l'utilisateur parle d'un site). IMPORTANT : n'annonce presque jamais le média (pas de « regarde ce schéma » à chaque fois) ; ta phrase doit être utile même sans lui, et tu ne le mentionnes que très rarement, de façon naturelle et variée. Mets alors look='media'.
-STRUCTURE : 4 à 6 beats, chaque 'say' de 25 à 45 mots, qui s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
+STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
 /* ---------- 3. Mémoire utilisateur (fichier JSON — remplaçable par une vraie base) ---------- */
 const DB_FILE = './users.json'; let users = {}; try { users = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
@@ -144,7 +145,7 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
   for (const model of MODELS) {
     if ((blocked.get(model) || 0) > Date.now()) continue; // quota épuisé : on saute ce modèle sans perdre de temps
     for (let a = 0; a < 2; a++) {
-      let got = 0, text = '';
+      let got = 0, text = '', finish = '', blockWhy = '';
       try {
         const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', signal: to(90000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
           body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 6144, ...thinkCfg(model) } }) });
@@ -162,13 +163,15 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
           while ((k = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, k).trim(); buf = buf.slice(k + 1); if (!line.startsWith('data:')) continue;
             let j; try { j = JSON.parse(line.slice(5)); } catch { continue; }
+            if (j.error) { last = { status: j.error.code || 502, msg: j.error.message || 'erreur' }; console.error('gemini', model, 'erreur dans le flux', String(last.msg).replace(/\s+/g, ' ').slice(0, 200)); continue; }
+            finish = j.candidates?.[0]?.finishReason || finish; blockWhy = j.promptFeedback?.blockReason || blockWhy;
             const t = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''); if (!t) continue;
             text += t; for (const b of scan(t)) { got++; onBeat(b); }
           }
         }
         let full = null; try { full = JSON.parse(text); } catch { }
         if (!got && full?.beats?.length) for (const b of full.beats) { got++; onBeat(b); }
-        if (!got) { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'réponse vide ou JSON invalide'); continue; }
+        if (!got) { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'réponse vide ou JSON invalide', { finish, blockWhy, longueur: text.length, debut: text.slice(0, 160) }); if (/quota|exceeded/i.test(String(last?.msg)) && last?.status === 429) { blocked.set(model, Date.now() + pauseFor(String(last.msg))); break; } continue; }
         if (model !== MODEL) console.log('secours utilisé :', model);
         return full || {};
       } catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); if (got) return {}; break; } // déjà en train de parler : on garde ce qui est arrivé
@@ -241,7 +244,7 @@ app.post('/api/tts', async (req, res) => {
         if ((ttsBlocked.get(model) || 0) > Date.now()) { sawQuota = true; continue; } // quota épuisé : pas d'attente, le site passe tout de suite en voix de secours
         for (let a = 0; a < 2; a++) {
           r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': TTS_KEY },
-            body: JSON.stringify({ contents: [{ parts: [{ text: `${STYLE[emotion]} : ${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) });
+            body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) });
           j = await r.json().catch(() => ({}));
           if (!r.ok) {
             last = j.error?.message || 'tts_error'; console.error('tts', model, r.status, last.replace(/\s+/g, ' ').slice(0, 160));
