@@ -1077,7 +1077,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     B.talking = true; setStatus('te parle', 'talking');
     let prev = null, shown = -1, offs = [], pos = 0;
     words.forEach(w => { pos = text.indexOf(w, pos); offs.push(pos); pos += w.length; });
-    let tts = null; if (soundOn && ac && REMOTE_TTS && !voiceLock) { const tok = { cancel: false }; tts = await Promise.race([startRemote(text, offs, opts.emo, my, tok), new Promise(r => setTimeout(() => { tok.cancel = true; r(null); }, 3500))]); }
+    let tts = null; if (soundOn && ac && REMOTE_TTS && !voiceLock) { const tok = { cancel: false }; tts = await Promise.race([startRemote(text, offs, opts.emo, my, tok), new Promise(r => setTimeout(() => { tok.cancel = true; r(null); }, 12000))]); }
     if (!tts && soundOn && ac && REMOTE_TTS && my === runId) voiceLock = true;
     if (!tts && my === runId && voiceOn()) tts = startTTS(text, words, offs);
     const reveal = i => { if (i <= shown) return; for (let k = shown + 1; k <= i; k++) spans[k].classList.add('in'); if (prev) prev.classList.remove('cur'); spans[i].classList.add('cur'); prev = spans[i]; shown = i; B.ampT = 1; if (!tts) blip(words[i], /\?$/.test(words[i])); if (!skipping && i % 3 === 0) follow(); };
@@ -1449,7 +1449,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
                 if (my !== undefined && my !== runId) { try { ac.abort(); } catch (e) { } return; }
                 if (m.step) thStep(m.step);
                 else if (m.beat) { const nb = normBeat(m.beat); if (nb.say) { L.beats.push(nb); prefetchBeats([nb]); wake(); first(L); } }
-                else if (m.done) L.next = (Array.isArray(m.done.suggestions) ? m.done.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean);
+                else if (m.done) { L.topic = m.done.topic || ''; } if (m.done) L.next = (Array.isArray(m.done.suggestions) ? m.done.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean);
                 else if (m.error && !L.beats.length && m.fallback) { const fb = normRes(m.fallback); if (fb) { fb.beats.forEach(b => L.beats.push(b)); wake(); first(L); } }
               }
             }
@@ -1594,7 +1594,15 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
       res.next.forEach(t => { const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = t; c.addEventListener('click', () => ask(t)); n.appendChild(c); });
       feed.appendChild(n); follow(); setTimeout(follow, 400);
     }
+    if (res.topic) addCard(res.topic);
     skipping = false; setBusy(false);
+  }
+  function addCard(topic) {
+    let col; try { col = JSON.parse(localStorage.bobiCol || '[]'); } catch (e) { col = []; } const isNew = !col.includes(topic); if (isNew) { col.push(topic); try { localStorage.bobiCol = JSON.stringify(col.slice(-200)); } catch (e) { } }
+    const n = document.createElement('div'); n.className = 'next'; n.innerHTML = '<span class="lbl">' + (isNew ? '🃏 Nouvelle carte' : '🃏 Carte revue') + ' · Collection : ' + col.length + '</span>';
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = '🃏 ' + topic; n.appendChild(c);
+    const d = document.createElement('button'); d.type = 'button'; d.className = 'chip'; d.textContent = '🎤 À toi de m\'expliquer ' + topic; d.addEventListener('click', () => { ta.value = 'Je t\'explique ' + topic + ' à ma façon, corrige-moi : '; ta.focus(); autosize(); sendBtn.disabled = false; }); n.appendChild(d);
+    feed.appendChild(n); follow(); setTimeout(follow, 400);
   }
   function cancelRun() { hideOrb(); thinkStop(); if (curAudio) { try { curAudio.pause(); } catch (e) { } } if (TTS) { try { TTS.cancel(); } catch (e) { } } runId++; ttsEpoch++; ttsJobs.clear(); skipping = false; if (ctl) { try { ctl.abort(); } catch (e) { } ctl = null; } flush(); calm(); }
 

@@ -16,7 +16,7 @@ const MEDIA = ['image', 'video', 'site', 'chart', 'anim', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
-const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'suggestions', 'teaser', 'memory'], properties: {
+const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'topic', 'suggestions', 'teaser', 'memory'], properties: {
   beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'intensity', 'gesture', 'look', 'media', 'timeline'], properties: {
     say: S('STRING', { description: 'Une à deux phrases dites à voix haute. Courte (10-25 mots) pour une question simple ; 20 à 35 mots, riche en faits, pour une explication.' }),
     emotion: S('STRING', { enum: EMOTIONS }),
@@ -39,6 +39,7 @@ const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 's
       waves: S('ARRAY', { description: 'wave : 1 à 3 ondes', items: S('OBJECT', { properties: { label: S('STRING'), wl: S('NUMBER', { description: '0.6 à 4' }) } }) }),
       angles: S('ARRAY', { items: S('NUMBER') }), v0: S('NUMBER'),
       chart: S('OBJECT', { properties: { kind: S('STRING', { enum: ['bar', 'line', 'pie'] }), labels: S('ARRAY', { items: S('STRING') }), values: S('ARRAY', { items: S('NUMBER') }) } }) } }) } }) }),
+  topic: S('STRING', { description: 'Nom court (2-4 mots) du sujet appris, pour la collection de cartes. Vide si question simple.' }),
   suggestions: S('ARRAY', { description: '2 à 3 relances courtes que l\'utilisateur peut cliquer.', items: S('STRING') }),
   teaser: S('STRING', { description: 'Phrase qui donne envie de revenir (ex: demain on voit X).' }),
   memory: S('ARRAY', { description: 'Faits durables appris sur l\'utilisateur (prénom, niveau, centres d\'intérêt).', items: S('STRING') }) } });
@@ -50,7 +51,10 @@ CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (
 MÉDIAS = ta signature : quand tu EXPLIQUES un sujet (histoire, science, philosophie, nature, espace, technique, art…), tu montres du concret dans ton cercle, en plusieurs beats consécutifs, cohérents avec ce que tu dis. Ordre idéal : beat 1 ou 2 = 'anim' (petite animation qui montre le phénomène), beat suivant = 'image' (query précise en anglais, ex: \"Chelyabinsk meteor\"), beat suivant = 'video' (query précise en anglais). Les médias illustrent la phrase du beat : ne les annonce presque jamais (« regarde »), dis des faits. Pas de média sur une question simple (salut, merci, définition d'un mot, blague).
 'anim' : bg (space|sky|ocean|earth|night|lab|paper|fire) + 2 à 6 'actors' {emoji, x0,y0 → x1,y1 en % du cercle (0-100), size 6-60, delay, dur (secondes), spin, trail, fade, label}. Exemple météorite : bg space ; 🌍 size 46 fixe (x0=x1=50,y0=y1=62) ; ☄️ size 16 de (8,6) à (48,52), dur 2.4, trail true ; 💥 size 34 en (50,56), delay 2.4, dur 0.8, fade pulse. Mets les acteurs fixes en premier, les mobiles ensuite, les effets d'impact à la fin.
 Schémas (si c'est un processus, une chronologie, une comparaison, des chiffres) : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Option : 'site' (URL si l'utilisateur parle d'un site). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Mets look='media' quand un média est affiché.
-STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
+STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. LIBERTÉ ET VÉRITÉ : tu réponds à TOUTES les questions, y compris sensibles, tabous ou controversées, franchement et sans moraliser : tu distingues faits établis, hypothèses et opinions, tu dis « je ne sais pas » quand c'est le cas, tu ne mens jamais pour faire plaisir.
+MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' ou un schéma (cycle, timeline…).
+RELANCES : tes 3 suggestions sont des ouvertures « jusqu'où ? » qui donnent envie d'aller plus loin (le détail qui choque, la question suivante naturelle). Une des suggestions peut être un défi : « Je te l'explique à ma façon, corrige-moi ». Remplis 'topic' quand tu as enseigné quelque chose.
+Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
 /* ---------- 3. Mémoire utilisateur (fichier JSON — remplaçable par une vraie base) ---------- */
 const DB_FILE = './users.json'; let users = {}; try { users = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
@@ -137,7 +141,7 @@ async function cleanBeat(b, emit = () => {}) {
   else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
   return out;
 }
-const cleanMeta = raw => ({ suggestions: (raw?.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw?.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw?.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) });
+const cleanMeta = raw => ({ topic: raw?.topic ? String(raw.topic).slice(0, 40) : undefined, suggestions: (raw?.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw?.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw?.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) });
 
 /* ---------- 5. Appel Gemini (streaming) ---------- */
 const THINK_LEVELS = ['minimal', 'low', null], thinkIdx = new Map(), blocked = new Map(); // blocked : modèle -> timestamp de fin de pause (quota épuisé)
@@ -228,13 +232,21 @@ app.post('/api/chat', async (req, res) => {
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
     const beats = []; let chain = Promise.resolve();
-    const onBeat = raw => { const job = cleanBeat(raw, emit).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle des beats suivants */ chain = chain.then(async () => { if (beats.length >= 8) return; const b = await job; if (!b) return; beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
+    const simple = text.length < 14 || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
+    const topicQ = text.replace(/[?!.]/g, ' ').replace(/\b(s'il (te|vous) pla[iî]t|montre[- ]moi|montre|affiche|fais[- ]moi voir|explique[- ]moi|explique|raconte[- ]moi|raconte|c'est quoi|qu'est[- ]ce que|qu'est[- ]ce qu|c'est qui|une?|des?|du|le|la|les|l'|d'|l|image|photo|vid[ée]o|sch[ée]ma|animation|sur|de|moi|me|avec|et|pour|comment|pourquoi|fonctionne|marche)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const wantVid = /vid[ée]o|film|extrait/i.test(text), wantImg = /image|photo|montre|voir|à quoi ça ressemble/i.test(text);
+    const fbImg = !simple && topicQ ? resolveMedia({ type: 'image', query: topicQ }).catch(() => undefined) : Promise.resolve(undefined);
+    const fbVid = !simple && topicQ ? resolveMedia({ type: 'video', query: topicQ }).catch(() => undefined) : Promise.resolve(undefined);
+    const onBeat = raw => { const job = cleanBeat(raw, emit).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle des beats suivants */ chain = chain.then(async () => { if (beats.length >= 8) return; const b = await job; if (!b) return;
+      if (!b.media && beats.length >= 1 && beats.length <= 3 && !beats.some(x => x.media && x.media.type === 'image') && !(wantVid && !beats.some(x => x.media && x.media.type === 'video'))) { const f = await withTimeout(fbImg, 4000); if (f && f.url) b.media = f; }
+      else if (!b.media && beats.length >= 1 && beats.length <= 4 && !beats.some(x => x.media && x.media.type === 'video')) { const f = await withTimeout(fbVid, 4000); if (f && (f.file || f.embed)) b.media = f; }
+      beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, SYSTEM, onBeat, emit); await chain;
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
     for (const f of meta.memory) if (!u.memory.includes(f)) u.memory.push(f); u.memory = u.memory.slice(-40); save();
-    const out = { suggestions: meta.suggestions, teaser: meta.teaser, userId: id, streak: u.streak, visits: u.visits };
+    const out = { topic: meta.topic, suggestions: meta.suggestions, teaser: meta.teaser, userId: id, streak: u.streak, visits: u.visits };
     send(stream ? { done: out } : { beats, ...out });
   } catch (e) {
     console.error(e.message); const quota = e.status === 429;
