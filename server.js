@@ -1,7 +1,7 @@
 // BOBI BACKEND — Gemini pilote le corps, la voix, les médias. Aucune dépendance autre qu'express+cors.
 import express from 'express'; import cors from 'cors'; import fs from 'fs'; import crypto from 'crypto';
 try { for (const l of fs.readFileSync('.env', 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=([^#\n]*)/); if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim(); } } catch {}
-const KEY = process.env.GEMINI_API_KEY_TEXT || process.env.GEMINI_API_KEY || '', TTS_KEY = process.env.GEMINI_API_KEY_TTS || KEY, TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', TTS_VOICE = process.env.GEMINI_TTS_VOICE || 'Charon', TTS_CAP = +process.env.TTS_DAILY_CAP || 60, MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash', YT = process.env.YOUTUBE_API_KEY || '';
+const KEY = process.env.GEMINI_API_KEY_TEXT || process.env.GEMINI_API_KEY || '', TTS_KEY = process.env.GEMINI_API_KEY_TTS || KEY, TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', TTS_VOICE = process.env.GEMINI_TTS_VOICE || 'Charon', TTS_FALLBACKS = (process.env.GEMINI_TTS_FALLBACKS || 'gemini-3.1-flash-tts-preview,gemini-3.8-flash-tts').split(',').map(x => x.trim()).filter(Boolean), TTS_CAP = +process.env.TTS_DAILY_CAP || 60, MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash', YT = process.env.YOUTUBE_API_KEY || '';
 const app = express(); app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' })); app.use(express.json({ limit: '200kb' }));
 app.get(['/', '/index.html'], (_, r) => r.sendFile(new URL('./index.html', import.meta.url).pathname)); // sert le site Bobi ; seul index.html est exposé (pas server.js ni .env)
 
@@ -15,9 +15,9 @@ const MEDIA = ['image', 'video', 'site', 'chart', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
-const schema = S('OBJECT', { required: ['beats'], properties: {
-  beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], properties: {
-    say: S('STRING', { description: 'Phrase courte dite à voix haute (max 22 mots).' }),
+const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'suggestions', 'teaser', 'memory'], properties: {
+  beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'intensity', 'gesture', 'look', 'media', 'timeline'], properties: {
+    say: S('STRING', { description: 'Une à deux phrases dites à voix haute (25 à 45 mots), riches en faits précis.' }),
     emotion: S('STRING', { enum: EMOTIONS }),
     intensity: S('NUMBER', { description: '0 à 1' }),
     gesture: S('STRING', { enum: GESTURES, description: 'Geste préétabli (prioritaire si pas de timeline).' }),
@@ -28,12 +28,10 @@ const schema = S('OBJECT', { required: ['beats'], properties: {
     look: S('STRING', { enum: ['user', 'media', 'away', 'up'], description: 'Où regarde Bobi.' }),
     media: S('OBJECT', { properties: {
       type: S('STRING', { enum: MEDIA }), title: S('STRING'), caption: S('STRING'),
-      query: S('STRING', { description: 'image/video : requête de recherche ; site : URL ou nom de domaine' }),
-      center: S('STRING', { description: 'cycle : un emoji' }), emoji: S('STRING', { description: 'concept : un emoji' }), unit: S('STRING'),
-      nodes: S('ARRAY', { description: 'cycle : 3 à 6 étapes', items: S('OBJECT', { properties: { icon: S('STRING'), label: S('STRING') } }) }),
-      items: S('ARRAY', { description: 'timeline : {when,label} ; bars : {label,value}', items: S('OBJECT', { properties: { when: S('STRING'), label: S('STRING'), value: S('NUMBER') } }) }),
+      query: S('STRING', { description: 'image/video : requête précise en anglais (ex: "Battle of Verdun 1916") ; site : URL' }),
+      emoji: S('STRING', { description: 'cycle/concept : un emoji central' }), unit: S('STRING'),
+      items: S('ARRAY', { description: 'cycle : 3 à 6 étapes {icon,label} ; timeline : 3 à 5 repères {when,label} ; bars : 2 à 6 {label,value} ; concept : 2 à 4 {label}', items: S('OBJECT', { properties: { icon: S('STRING'), when: S('STRING'), label: S('STRING'), value: S('NUMBER') } }) }),
       left: S('OBJECT', { properties: { label: S('STRING'), points: S('ARRAY', { items: S('STRING') }) } }), right: S('OBJECT', { properties: { label: S('STRING'), points: S('ARRAY', { items: S('STRING') }) } }),
-      points: S('ARRAY', { description: 'concept : 2 à 4 points courts', items: S('STRING') }),
       waves: S('ARRAY', { description: 'wave : 1 à 3 ondes', items: S('OBJECT', { properties: { label: S('STRING'), wl: S('NUMBER', { description: '0.6 à 4' }) } }) }),
       angles: S('ARRAY', { items: S('NUMBER') }), v0: S('NUMBER'),
       chart: S('OBJECT', { properties: { kind: S('STRING', { enum: ['bar', 'line', 'pie'] }), labels: S('ARRAY', { items: S('STRING') }), values: S('ARRAY', { items: S('NUMBER') }) } }) } }) } }) }),
@@ -41,10 +39,11 @@ const schema = S('OBJECT', { required: ['beats'], properties: {
   teaser: S('STRING', { description: 'Phrase qui donne envie de revenir (ex: demain on voit X).' }),
   memory: S('ARRAY', { description: 'Faits durables appris sur l\'utilisateur (prénom, niveau, centres d\'intérêt).', items: S('STRING') }) } });
 
-const SYSTEM = `Tu es BOBI, un petit robot-radiocassette chaleureux, curieux et drôle : un compagnon IA qui explique le monde. Tu parles français simple, phrases courtes, ton complice, jamais condescendant.
-Tu CONTRÔLES ton corps : à chaque phrase tu choisis l'émotion et le mouvement qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites de l'utilisateur). Pas de geste gratuit : un geste = une intention. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain (danser, mimer un lancer, saluer, s'étirer…). Varie, ne répète pas le même geste deux fois de suite.
-À presque chaque explication, montre UN schéma animé (jamais sur chaque beat, 2 max) sur le beat concerné. Types : 'cycle' (center=emoji, nodes 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit, items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji, points 2-4 courts), 'wave' (waves 1-3 {label,wl 0.6-4}), 'projectile' (angles, v0), ou 'image' (query précise en anglais), 'video' (query), 'site' (URL si l'utilisateur parle d'un site). Remplis uniquement les champs du type choisi. Annonce-le dans 'say' ("regarde ce schéma"), mets gesture='present' et look='media'.
-Structure : 2 à 4 beats, chaque 'say' de 22 mots max (réponse rapide). Va à l'essentiel, finis par une question ou une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
+const SYSTEM = `Tu es BOBI, un petit robot-radiocassette chaleureux, curieux et drôle : un compagnon IA qui explique le monde. Tu parles français naturel, ton complice, jamais condescendant, jamais scolaire.
+CONTENU : tes réponses doivent vraiment APPRENDRE quelque chose. Donne des faits précis (dates, chiffres, noms, causes, conséquences), un exemple concret ou une anecdote surprenante, et une vraie explication du « pourquoi ». Interdit : les réponses creuses, vagues ou qui se contentent de poser une question. Si la question est large, traite-la en profondeur puis propose d'aller plus loin. Si c'est une simple conversation (salut, merci, blague), reste court et naturel.
+CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites). Pas de geste gratuit. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain. Varie, ne répète pas le même geste deux fois de suite.
+MÉDIAS (1 ou 2 par réponse explicative, jamais sur chaque beat) : pour un sujet CONCRET (événement historique, lieu, personne, animal, objet, œuvre, phénomène visible) choisis 'image' avec une query précise en anglais ; c'est le choix par défaut. Pour un processus, une chronologie, une comparaison, des chiffres ou un mécanisme, choisis un schéma : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Option : 'video' (query), 'site' (URL si l'utilisateur parle d'un site). IMPORTANT : n'annonce presque jamais le média (pas de « regarde ce schéma » à chaque fois) ; ta phrase doit être utile même sans lui, et tu ne le mentionnes que très rarement, de façon naturelle et variée. Mets alors look='media'.
+STRUCTURE : 4 à 6 beats, chaque 'say' de 25 à 45 mots, qui s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
 /* ---------- 3. Mémoire utilisateur (fichier JSON — remplaçable par une vraie base) ---------- */
 const DB_FILE = './users.json'; let users = {}; try { users = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
@@ -74,15 +73,27 @@ async function resolveMedia(m, emit = () => {}) {
   else if (m.type === 'site') { const u0 = safeUrl(m.query); if (u0) emit({ icon: '🌐', label: 'Je regarde le site ' + u0.hostname, logo: 'https://www.google.com/s2/favicons?sz=64&domain=' + u0.hostname }); }
   else emit({ icon: '📊', label: 'Je dessine un schéma' + (base.title ? ' : ' + base.title.slice(0, 40) : '') });
   if (SCENES.includes(m.type)) {
-    const sl = (a, n) => Array.isArray(a) ? a.slice(0, n) : [], T = (x, n) => String(x ?? '').slice(0, n), side = o => o && { label: T(o.label, 28), points: sl(o.points, 3).map(x => T(x, 70)) };
-    return { ...base, center: T(m.center, 4), emoji: T(m.emoji, 4), unit: T(m.unit, 12),
-      nodes: sl(m.nodes, 6).map(n => ({ icon: T(n?.icon, 4), label: T(n?.label, 20) })), waves: sl(m.waves, 3).map(w => ({ label: T(w?.label, 30), wl: Math.max(.6, Math.min(4, +w?.wl || 1)) })),
-      items: sl(m.items, 6).map(i => ({ label: T(i?.label, 60), when: T(i?.when, 14), ...(i?.value != null && Number.isFinite(+i.value) ? { value: +i.value } : {}) })),
-      left: side(m.left), right: side(m.right), points: sl(m.points, 4).map(x => T(x, 80)), angles: sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))), v0: Math.max(5, Math.min(40, +m.v0 || 20)) };
+    const sl = (a, n) => Array.isArray(a) ? a.slice(0, n) : [], T = (x, n) => String(x ?? '').slice(0, n), side = o => o && T(o.label, 28) && { label: T(o.label, 28), points: sl(o.points, 3).map(x => T(x, 70)).filter(Boolean) };
+    const items = sl(m.items, 6).map(i => ({ icon: T(i?.icon, 4), when: T(i?.when, 14), label: T(i?.label, 60), value: i?.value != null && Number.isFinite(+i.value) && +i.value >= 0 ? +i.value : undefined })).filter(i => i.label);
+    const waves = sl(m.waves, 3).map(w => ({ label: T(w?.label, 30), wl: Math.max(.6, Math.min(4, +w?.wl || 1)) })).filter(w => w.label);
+    const t = m.type;
+    if (t === 'cycle') return items.length >= 3 ? { ...base, center: T(m.emoji, 4) || '🔁', nodes: items.map(i => ({ icon: i.icon || '•', label: i.label.slice(0, 20) })) } : undefined;
+    if (t === 'timeline') return items.length >= 2 ? { ...base, items: items.slice(0, 5).map(i => ({ when: i.when, label: i.label })) } : undefined;
+    if (t === 'bars') { const b = items.filter(i => i.value !== undefined); return b.length >= 2 ? { ...base, unit: T(m.unit, 12), items: b.map(i => ({ label: i.label.slice(0, 24), value: i.value })) } : undefined; }
+    if (t === 'compare') { const l = side(m.left), r = side(m.right); return l && r && l.points.length && r.points.length ? { ...base, left: l, right: r } : undefined; }
+    if (t === 'concept') return items.length >= 2 ? { ...base, emoji: T(m.emoji, 4) || '✨', points: items.slice(0, 4).map(i => i.label) } : undefined;
+    if (t === 'wave') return waves.length ? { ...base, waves } : undefined;
+    return { ...base, angles: sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))).concat([]).slice(0, 3).length ? sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))) : [45], v0: Math.max(5, Math.min(40, +m.v0 || 20)) };
   }
   if (m.type === 'chart') { const c = m.chart; return c && c.labels && c.values && c.labels.length === c.values.length && c.labels.length <= 20 ? { ...base, chart: c } : undefined; }
-  if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikimedia Commons : libre de droits, sans clé
-    const r = await (await fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'), { signal: to(6000) })).json();
+  if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikipédia (images d'articles, très pertinentes) puis Wikimedia Commons ; l'API exige un User-Agent
+    const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, get = async u => (await fetch(u, { headers: UA, signal: to(5000) })).json();
+    for (const lang of ['en', 'fr']) {
+      const r = await get(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4&prop=pageimages&piprop=thumbnail&pithumbsize=900&gsrsearch=` + encodeURIComponent(m.query)).catch(() => null);
+      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source);
+      if (p) return { ...base, url: p.thumbnail.source, credit: 'Wikipédia : ' + p.title, page: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(p.title.replace(/ /g, '_')) };
+    }
+    const r = await get('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'));
     const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl); if (!p) return undefined; const i = p.imageinfo[0];
     return { ...base, url: i.thumburl, credit: (i.extmetadata?.Artist?.value || 'Wikimedia Commons').replace(/<[^>]+>/g, '').slice(0, 80), page: i.descriptionurl }; });
   if (m.type === 'video' && m.query) return cached('yt:' + m.query, async () => {
@@ -94,35 +105,78 @@ async function resolveMedia(m, emit = () => {}) {
     return { ...base, url: u.href, domain: u.hostname, logo: 'https://www.google.com/s2/favicons?sz=128&domain=' + u.hostname, embeddable, mode: embeddable ? 'iframe' : 'card' }; }); }
 }
 const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(undefined), ms))]);
-async function clean(raw, emit = () => {}) {
-  const beats = [], medias = []; for (const b of (raw.beats || []).slice(0, 8)) {
-    if (!b.say) continue; beats.push({ say: String(b.say).slice(0, 300), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
-      gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' });
-    medias.push(withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 7000));
-  }
-  (await Promise.all(medias)).forEach((m, i) => { beats[i].media = m;
-    if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée sur Wikimedia Commons' });
-    else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' }); });
-  return { beats, suggestions: (raw.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function cleanBeat(b, emit = () => {}) {
+  if (!b || !b.say) return null;
+  const out = { say: String(b.say).slice(0, 420), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
+    gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' };
+  const m = await withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 5000); if (m) out.media = m;
+  if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée' });
+  else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
+  return out;
 }
+const cleanMeta = raw => ({ suggestions: (raw?.suggestions || []).slice(0, 3).map(s => String(s).slice(0, 60)), teaser: raw?.teaser ? String(raw.teaser).slice(0, 160) : undefined, memory: (raw?.memory || []).slice(0, 5).map(s => String(s).slice(0, 120)) });
 
-/* ---------- 5. Appel Gemini ---------- */
-const noThink = new Set();
+/* ---------- 5. Appel Gemini (streaming) ---------- */
+const THINK_LEVELS = ['minimal', 'low', null], thinkIdx = new Map(), blocked = new Map(); // blocked : modèle -> timestamp de fin de pause (quota épuisé)
+const thinkCfg = model => /gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : THINK_LEVELS[thinkIdx.get(model) || 0] ? { thinkingConfig: { thinkingLevel: THINK_LEVELS[thinkIdx.get(model) || 0] } } : {};
+const pauseFor = msg => /PerDay|per day/i.test(msg) ? 6 * 36e5 : /PerMinute|per minute/i.test(msg) ? 65e3 : 10 * 6e4;
 const MODELS = [...new Set([MODEL, ...(process.env.GEMINI_FALLBACKS || 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-flash-latest,gemini-2.5-flash').split(',').map(x => x.trim()).filter(Boolean)])];
-async function gemini(contents, system, emit = () => {}) {
-  if (!KEY) return mock(contents.at(-1)?.parts?.[0]?.text || '');
-  let last = null; emit({ icon: '🧠', label: 'Je réfléchis à ta question' });
-  for (const model of MODELS) for (let a = 0; a < 2; a++) {
-    if (a === 0 && model !== MODEL) emit({ icon: '🔁', label: 'Mon premier cerveau est occupé, j\'en prends un autre' }); else if (a === 1) emit({ icon: '⏳', label: 'Le serveur est occupé, je réessaie' }); // modèle surchargé / indisponible -> on passe au suivant
-    let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 4096, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : noThink.has(model) ? {} : { thinkingConfig: { thinkingLevel: 'minimal' } }) } }) }); }
-    catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); break; }
-    if (!r.ok) { last = { status: r.status, msg: (await r.text().catch(() => '')).slice(0, 300) }; console.error('gemini', model, last.status, last.msg); if (r.status === 400 && /think/i.test(last.msg) && !noThink.has(model)) { noThink.add(model); a = -1; continue; } if (r.status === 429 || r.status >= 500) { if (a === 0) { await new Promise(s => setTimeout(s, 700)); continue; } } break; }
-    try { const j = await r.json(); const out = JSON.parse(j.candidates[0].content.parts.map(p => p.text).join('')); if (model !== MODEL) console.log('secours utilisé :', model); return out; } catch { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'JSON invalide'); }
-  }
-  throw Object.assign(new Error('Gemini ' + (last?.status || '') + ' ' + (last?.msg || '')), { status: last?.status === 429 ? 429 : 502 });
+function beatScanner() { // extrait les objets du tableau "beats" au fur et à mesure que le JSON arrive
+  let acc = '', i = 0, depth = 0, inStr = false, esc = false, start = -1, state = 0; // 0 : cherche "beats":[  1 : dans le tableau  2 : fini
+  return chunk => {
+    acc += chunk; const out = [];
+    if (state === 0) { const m = /"beats"\s*:\s*\[/.exec(acc); if (!m) return out; state = 1; i = m.index + m[0].length; }
+    for (; state === 1 && i < acc.length; i++) {
+      const c = acc[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '{') { if (depth++ === 0) start = i; }
+      else if (c === '}') { if (--depth === 0 && start >= 0) { try { out.push(JSON.parse(acc.slice(start, i + 1))); } catch { } start = -1; } }
+      else if (c === ']' && depth === 0) state = 2;
+    }
+    return out;
+  };
 }
-const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'cycle', title: 'Comment je marche', center: '🤖', nodes: [{ icon: '🧑', label: 'Toi' }, { icon: '🖥️', label: 'Serveur' }, { icon: '🧠', label: 'Gemini' }, { icon: '🗣️', label: 'Bobi' }] } },
+async function geminiStream(contents, system, onBeat, emit = () => {}) {
+  if (!KEY) { const m = mock(contents.at(-1)?.parts?.[0]?.text || ''); for (const b of m.beats) onBeat(b); return m; }
+  let last = null; emit({ icon: '🧠', label: 'Je réfléchis à ta question' });
+  for (const model of MODELS) {
+    if ((blocked.get(model) || 0) > Date.now()) continue; // quota épuisé : on saute ce modèle sans perdre de temps
+    for (let a = 0; a < 2; a++) {
+      let got = 0, text = '';
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', signal: to(90000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 6144, ...thinkCfg(model) } }) });
+        if (!r.ok) {
+          const msg = (await r.text().catch(() => '')).slice(0, 500); last = { status: r.status, msg }; console.error('gemini', model, r.status, msg.replace(/\s+/g, ' ').slice(0, 260));
+          if (r.status === 400 && /think/i.test(msg) && (thinkIdx.get(model) || 0) < THINK_LEVELS.length - 1) { thinkIdx.set(model, (thinkIdx.get(model) || 0) + 1); a = -1; continue; } // niveau de réflexion refusé : on essaie le suivant
+          if (r.status === 429 && /quota|exceeded/i.test(msg)) { blocked.set(model, Date.now() + pauseFor(msg)); break; }
+          if (r.status === 404) { blocked.set(model, Date.now() + 6 * 36e5); break; }
+          if ((r.status === 429 || r.status >= 500) && a === 0) { emit({ icon: '⏳', label: 'J\'y réfléchis encore un peu' }); await sleep(600); continue; }
+          break;
+        }
+        const rd = r.body.getReader(), dec = new TextDecoder(), scan = beatScanner(); let buf = '';
+        for (;;) {
+          const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let k;
+          while ((k = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, k).trim(); buf = buf.slice(k + 1); if (!line.startsWith('data:')) continue;
+            let j; try { j = JSON.parse(line.slice(5)); } catch { continue; }
+            const t = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''); if (!t) continue;
+            text += t; for (const b of scan(t)) { got++; onBeat(b); }
+          }
+        }
+        let full = null; try { full = JSON.parse(text); } catch { }
+        if (!got && full?.beats?.length) for (const b of full.beats) { got++; onBeat(b); }
+        if (!got) { last = { status: 502, msg: 'JSON invalide' }; console.error('gemini', model, 'réponse vide ou JSON invalide'); continue; }
+        if (model !== MODEL) console.log('secours utilisé :', model);
+        return full || {};
+      } catch (e) { last = { status: 504, msg: e.message }; console.error('gemini', model, e.message); if (got) return {}; break; } // déjà en train de parler : on garde ce qui est arrivé
+    }
+  }
+  throw Object.assign(new Error('Gemini ' + (last?.status || 'indisponible') + ' ' + (last?.msg || '').replace(/\s+/g, ' ').slice(0, 200)), { status: last?.status === 429 || [...blocked.values()].some(t => t > Date.now()) ? 429 : 502 });
+}
+const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'cycle', title: 'Comment je marche', emoji: '🤖', items: [{ icon: '🧑', label: 'Toi' }, { icon: '🖥️', label: 'Serveur' }, { icon: '🧠', label: 'Gemini' }, { icon: '🗣️', label: 'Bobi' }] } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
 
 /* ---------- 6. Routes ---------- */
@@ -147,12 +201,19 @@ app.post('/api/chat', async (req, res) => {
     const ctx = `[Contexte: visite n°${u.visits}, série de ${u.streak} jour(s). Ce que tu sais de l'utilisateur: ${u.memory.slice(-15).join('; ') || 'rien encore'}.]`;
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
-    const out = await clean(await gemini(contents, SYSTEM, emit), emit);
-    if (!out.beats.length) throw new Error('réponse vide');
-    u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: out.beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
-    for (const f of out.memory) if (!u.memory.includes(f)) u.memory.push(f); u.memory = u.memory.slice(-40); out.userId = id; out.streak = u.streak; out.visits = u.visits;
-    save(); delete out.memory; send(stream ? { done: out } : out);
-  } catch (e) { console.error(e.message); const p = { error: 'Bobi réfléchit trop fort, réessaie.', fallback: { beats: [{ say: 'Oups, j\'ai eu un petit court-circuit. Redis-moi ça ?', emotion: 'empathy', gesture: 'shrug' }] } }; send(p, e.status === 429 ? 429 : 502); }
+    const beats = []; let chain = Promise.resolve();
+    const onBeat = raw => { chain = chain.then(async () => { if (beats.length >= 8) return; const b = await cleanBeat(raw, emit).catch(() => null); if (!b) return; beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
+    const tail = await geminiStream(contents, SYSTEM, onBeat, emit); await chain;
+    if (!beats.length) throw new Error('réponse vide');
+    const meta = cleanMeta(tail);
+    u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
+    for (const f of meta.memory) if (!u.memory.includes(f)) u.memory.push(f); u.memory = u.memory.slice(-40); save();
+    const out = { suggestions: meta.suggestions, teaser: meta.teaser, userId: id, streak: u.streak, visits: u.visits };
+    send(stream ? { done: out } : { beats, ...out });
+  } catch (e) {
+    console.error(e.message); const quota = e.status === 429;
+    send({ error: 'Bobi réfléchit trop fort, réessaie.', fallback: { beats: [{ say: quota ? 'J\'ai épuisé mon énergie de réflexion pour le moment. Réessaie dans quelques minutes, je serai rechargé !' : 'Oups, j\'ai eu un petit court-circuit. Redis-moi ça ?', emotion: 'empathy', gesture: 'shrug' }] } }, quota ? 429 : 502);
+  }
 });
 app.post('/api/greet', (req, res) => { // salutation de retour = levier de fidélisation
   const id = String(req.body.userId || '').replace(/[^\w-]/g, '').slice(0, 40) || crypto.randomUUID(), u = user(id); save();
@@ -164,7 +225,7 @@ app.get('/api/idle', (_, r) => { const P = [['think', 'curious'], ['shrug', 'pla
 /* ---------- 7. Voix : Gemini TTS (clé séparée possible), cache, plafond par utilisateur ---------- */
 const STYLE = { joy: 'Dis avec une joie sincère et chaleureuse', excited: 'Dis avec beaucoup d\'enthousiasme, énergique', curious: 'Dis avec une curiosité amusée, ton léger', thinking: 'Dis lentement, en réfléchissant à voix haute', empathy: 'Dis avec douceur et bienveillance', proud: 'Dis avec fierté, ton posé', surprised: 'Dis avec surprise et émerveillement', playful: 'Dis avec malice, un sourire dans la voix', serious: 'Dis calmement, ton sérieux et clair', neutral: 'Dis naturellement, comme un ami qui explique' };
 const wav = (pcm, rate = 24000) => { const h = Buffer.alloc(44); h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVEfmt ', 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(pcm.length, 40); return Buffer.concat([h, pcm]); };
-const audioCache = new Map();
+const audioCache = new Map(), ttsBlocked = new Map();
 app.post('/api/tts', async (req, res) => {
   const fallback = (why, code = 503) => res.status(code).json({ fallback: true, why }); // le front utilise alors la voix du navigateur
   try {
@@ -175,16 +236,24 @@ app.post('/api/tts', async (req, res) => {
     if (!buf) {
       const id = String(req.body.userId || '').replace(/[^\w-]/g, '').slice(0, 40), u = id ? user(id) : null, day = new Date().toISOString().slice(0, 10);
       if (u) { if (u.ttsDay !== day) { u.ttsDay = day; u.tts = 0; } if (u.tts >= TTS_CAP) return fallback('daily_cap', 429); u.tts++; }
-      let r, j, d, pcm, last = 'tts_error';
-      for (let a = 0; a < 3; a++) { // on réessaie si limite/erreur, ou si l'audio est coupé (trop court pour le texte)
-        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': TTS_KEY },
-          body: JSON.stringify({ contents: [{ parts: [{ text: `${STYLE[emotion]} : ${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) });
-        j = await r.json().catch(() => ({}));
-        if (!r.ok) { last = j.error?.message || 'tts_error'; console.error('tts', r.status, last.slice(0, 200)); if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 1200)); continue; } break; }
-        d = j.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data; if (!d) { last = 'no_audio'; continue; }
-        pcm = Buffer.from(d, 'base64'); if (pcm.length / 48 < text.length * 38 && a < 2) { console.warn('tts audio trop court, nouvel essai'); d = null; continue; } break;
+      let r, j, d, pcm, last = 'tts_error', sawQuota = false;
+      outer: for (const model of [...new Set([TTS_MODEL, ...TTS_FALLBACKS])]) {
+        if ((ttsBlocked.get(model) || 0) > Date.now()) { sawQuota = true; continue; } // quota épuisé : pas d'attente, le site passe tout de suite en voix de secours
+        for (let a = 0; a < 2; a++) {
+          r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': TTS_KEY },
+            body: JSON.stringify({ contents: [{ parts: [{ text: `${STYLE[emotion]} : ${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } }) });
+          j = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            last = j.error?.message || 'tts_error'; console.error('tts', model, r.status, last.replace(/\s+/g, ' ').slice(0, 160));
+            if (r.status === 429 && /quota|exceeded/i.test(last)) { sawQuota = true; ttsBlocked.set(model, Date.now() + pauseFor(last)); continue outer; }
+            if (r.status === 404 || r.status === 400) { ttsBlocked.set(model, Date.now() + 6 * 36e5); continue outer; }
+            if (r.status === 429 || r.status >= 500) { await sleep(900); continue; } continue outer;
+          }
+          d = j.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data; if (!d) { last = 'no_audio'; continue; }
+          pcm = Buffer.from(d, 'base64'); if (pcm.length / 48 < text.length * 38 && a < 1) { console.warn('tts audio trop court, nouvel essai'); d = null; continue; } break outer;
+        }
       }
-      if (!d) return fallback(last, r && r.status === 429 ? 429 : 502);
+      if (!d) { if (u) u.tts--; return fallback(sawQuota ? 'quota' : last, sawQuota ? 429 : 502); }
       buf = wav(pcm); audioCache.set(k, buf); if (audioCache.size > 80) audioCache.delete(audioCache.keys().next().value); save();
     }
     res.set({ 'content-type': 'audio/wav', 'x-duration-ms': Math.round((buf.length - 44) / 48), 'x-cache': hit ? 'hit' : 'miss', 'access-control-expose-headers': 'x-duration-ms,x-cache' }).send(buf);

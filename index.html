@@ -1,16 +1,27 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
-/* Bobi réfléchit : il rétrécit aux 2/3, des icônes flottent derrière lui */
+/* Bobi réfléchit / parle : il rétrécit aux 2/3, une ronde d'icônes tourne derrière lui, des réactions jaillissent */
 #c3d,.flat{transition:scale .55s cubic-bezier(.2,.8,.2,1)}#c3d{transform-origin:50% 78%}.flat{transform-origin:50% 100%}
 .cstage.thinking #c3d,.cstage.thinking .flat{scale:.67}
+.cstage.thinking::before{animation:halo 1.8s ease-in-out infinite}.cstage.talking::before{animation:halo .95s ease-in-out infinite}
+.cstage.thinking::after{border-color:var(--accent);border-style:dashed;opacity:.85;animation:ringspin 14s linear infinite}
+@keyframes halo{50%{transform:translate(-50%,-50%) scale(1.045);opacity:1}}
+@keyframes ringspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 .tfx{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
-.tfx .ti{position:absolute;display:grid;place-items:center;width:clamp(38px,5.2vw,54px);aspect-ratio:1;border-radius:16px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(8px);font-size:clamp(20px,2.8vw,28px);box-shadow:0 6px 18px rgba(0,0,0,.12);animation:tiIn .55s cubic-bezier(.2,.9,.3,1.4) both,tiFloat 3.2s ease-in-out .55s infinite}
+.tfx .orb{position:absolute;left:50%;top:54%;width:0;height:0;animation:orbit 16s linear infinite}
+.tfx .arm{position:absolute;left:0;top:0;transform:rotate(var(--a)) translateX(var(--R))}
+.tfx .cr{position:absolute;left:0;top:0;rotate:calc(var(--a) * -1);animation:orbitInv 16s linear infinite}
+.tfx .ti{position:absolute;left:0;top:0;translate:-50% -50%;display:grid;place-items:center;width:clamp(40px,5.4vw,56px);aspect-ratio:1;border-radius:16px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(8px);font-size:clamp(20px,2.8vw,28px);box-shadow:0 6px 18px rgba(0,0,0,.18);animation:tiIn .6s cubic-bezier(.2,.9,.3,1.4) both,tiFloat 2.6s ease-in-out .6s infinite}
 .tfx .ti img{width:58%;height:58%;border-radius:6px}.tfx .ti.out{animation:tiOut .35s ease-in both}
-@keyframes tiIn{from{opacity:0;transform:scale(.2) translateY(20px)}to{opacity:1;transform:none}}
-@keyframes tiFloat{50%{transform:translateY(-7px) rotate(2deg)}}
+@keyframes orbit{to{transform:rotate(360deg)}}@keyframes orbitInv{to{transform:rotate(-360deg)}}
+@keyframes tiIn{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:none}}
+@keyframes tiFloat{50%{transform:translateY(-6px) scale(1.06)}}
 @keyframes tiOut{to{opacity:0;transform:scale(.3)}}
+.tfx2{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}
+.tfx2 .fb{position:absolute;font-size:clamp(20px,3vw,32px);opacity:0;animation:fup 2s ease-out forwards;filter:drop-shadow(0 4px 8px rgba(0,0,0,.3))}
+@keyframes fup{0%{opacity:0;transform:translateY(14px) scale(.3)}18%{opacity:1;transform:translateY(-8px) scale(1.2) rotate(calc(var(--r) * .4))}100%{opacity:0;transform:translate(var(--dx),-130px) scale(.9) rotate(var(--r))}}
 .thinkrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:6px 0 14px}.thinkrow .dots{padding:0}
 .tlabel{font-family:var(--mono);font-size:12.5px;color:var(--mute)}.tlabel b{color:var(--accent);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
-@media (prefers-reduced-motion:reduce){.tfx .ti{animation:none}#c3d,.flat{transition:none}}
+@media (prefers-reduced-motion:reduce){.tfx .orb,.tfx .cr,.tfx .ti,.cstage.thinking::before,.cstage.talking::before,.cstage.thinking::after{animation:none}#c3d,.flat{transition:none}}
 </style></head><body>
 <title>Bobi</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -794,7 +805,7 @@ const SCENES = {
   ,
   image(p) {
     const u = /^https:\/\//.test(p.url) ? p.url : ''; if (!u) throw 0;
-    return `<img src="${esc(u)}" alt="${esc(S(p.title, 80))}" loading="lazy" style="width:100%;border-radius:12px;display:block">` + (p.credit ? `<p class="cap">Image : ${esc(S(p.credit, 80))} (Wikimedia Commons)</p>` : '');
+    return `<img src="${esc(u)}" alt="${esc(S(p.title, 80))}" loading="lazy" style="width:100%;border-radius:12px;display:block">` + (p.credit ? `<p class="cap">Image : ${esc(S(p.credit, 80))}</p>` : '');
   },
   link(p) {
     const u = /^https?:\/\//.test(p.url) ? p.url : ''; if (!u) throw 0;
@@ -907,19 +918,19 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   /* ---------- vraie voix (synthèse vocale du navigateur) ---------- */
   const TTS = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window ? window.speechSynthesis : null;
-  let voice = null, voiceMale = false;
+  let voice = null, voiceMale = false, voiceNat = false;
   function pickVoice() {
     if (!TTS) return; const vs = TTS.getVoices().filter(v => /^fr/i.test(v.lang)); if (!vs.length) return;
     const FEM = /am[ée]lie|marie|audrey|denise|[ée]loise|julie|hortense|female|femme|aur[ée]lie|c[ée]line|virginie|lea|léa|sylvie|claire|jolie/i, MALE = /thomas|paul|henri|daniel|claude|antoine|nicolas|male|homme|bernard|guillaume|remy|rémy|mathieu|alain|gérard|gerard|jérôme|jerome|fabrice|maurice|thierry|jacques|jean|luc|hugo|lucas|yannick/i;
-    const score = v => (MALE.test(v.name) ? 10 : 0) - (FEM.test(v.name) ? 6 : 0) + (/natural|neural|multilingual/i.test(v.name) ? 5 : 0) + (/online/i.test(v.name) ? 2 : 0) + (/google/i.test(v.name) ? 1 : 0) + (/fr[-_]fr/i.test(v.lang) ? 1 : 0);
-    voice = vs.sort((a, b) => score(b) - score(a))[0]; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name);
+    const score = v => (/natural|neural|multilingual/i.test(v.name) ? 40 : 0) + (/online/i.test(v.name) ? 15 : 0) + (/google/i.test(v.name) ? 14 : 0) - (/^Microsoft/i.test(v.name) && !/online|natural/i.test(v.name) ? 10 : 0) + (MALE.test(v.name) ? 6 : 0) - (FEM.test(v.name) ? 3 : 0) + (/fr[-_]fr/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 4 : 0);
+    voice = vs.sort((a, b) => score(b) - score(a))[0]; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name); voiceNat = /natural|neural|online|google/i.test(voice.name);
   }
   if (TTS) { pickVoice(); TTS.addEventListener && TTS.addEventListener('voiceschanged', pickVoice); }
   const voiceOn = () => !!(TTS && voice && soundOn && ac);
   function startTTS(text, words, offs) {
     const o = { bCount: 0, onWord: null, ended: false }; o.started = new Promise(r => { o._st = r; });
     const _u0 = null, u = new SpeechSynthesisUtterance(text);
-    u.lang = voice.lang; u.voice = voice; u.rate = voiceMale ? .98 : .94; u.pitch = voiceMale ? .92 : .55; u.volume = 1;
+    u.lang = voice.lang; u.voice = voice; u.rate = voiceNat ? 1 : voiceMale ? .98 : .94; u.pitch = voiceNat ? 1 : voiceMale ? .92 : .8; u.volume = 1;
     o.done = new Promise(res => {
       u.onstart = () => o._st(); u.onend = u.onerror = () => { o.ended = true; o._st(); res(); };
       u.onboundary = e => { if (e.name && e.name !== 'word') return; o.bCount++; let k = 0; while (k + 1 < offs.length && offs[k + 1] <= e.charIndex) k++; if (o.onWord) o.onWord(k); };
@@ -946,6 +957,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
           if (r.ok && /audio/i.test(r.headers.get('content-type') || '')) return { dur: +r.headers.get('x-duration-ms') || 0, blob: await r.blob() };
           let why = ''; try { why = (await r.json()).why || ''; } catch (e) { }
           if (why === 'no_key' || why === 'daily_cap') { REMOTE_TTS = false; return null; }
+          if (why === 'quota') { REMOTE_TTS = false; setTimeout(() => { REMOTE_TTS = true; }, 10 * 60e3); return null; }
           console.warn('Voix Gemini indisponible', why || r.status);
         } catch (e) { console.warn('Voix Gemini en échec', e); } finally { clearTimeout(t0); }
         await new Promise(s => setTimeout(s, 2500));
@@ -1021,25 +1033,40 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   /* ---------- Bobi réfléchit : icônes derrière lui, étapes réelles du serveur, poses variées ---------- */
   const TH_ICONS = [[/eau|pluie|nuage|mer\b|oc[ée]an/, '💧'], [/ciel|lumi[eè]re|couleur|soleil/, '🌅'], [/histoire|r[ée]volution|guerre|roi|date|napol/, '🏛️'], [/balle|lancer|sport|foot|angle|vitesse/, '⚽'], [/math|calcul|nombre|fraction|[ée]quation|g[ée]om/, '🧮'], [/plan[eè]te|espace|lune|mars|[ée]toile|fus[ée]e/, '🪐'], [/animal|chat|chien|oiseau|dinosaure|poisson/, '🐾'], [/cuisine|recette|g[aâ]teau|manger/, '🍳'], [/musique|chanson|guitare|piano/, '🎵'], [/code|programm|python|javascript|web|app/, '💻'], [/corps|sant[eé]|c[œo]eur|cerveau|m[ée]decin/, '🫀'], [/anglais|langue|grammaire|traduc/, '🔤'], [/argent|euro|prix|[ée]conomie|banque/, '💶'], [/terre|volcan|s[ée]isme|climat|m[ée]t[ée]o/, '🌍'], [/physique|force|[ée]nergie|atome|[ée]lectri/, '⚛️'], [/chimie|mol[ée]cule|acide/, '🧪']];
   const TH_PHASES = ['Je lis ta question…', 'Je cherche dans ma mémoire…', 'Je choisis la meilleure explication…', 'Je mets mes idées dans l\'ordre…', 'Je prépare de quoi te le montrer…'];
-  const TH_SLOTS = [[12, 20], [80, 16], [6, 50], [86, 46], [20, 72], [74, 70]];
   const TH_POSES = [{ t: .9, l: .06, y: .25 }, { t: -1, l: .03, y: -.25, g: 'nod' }, { t: .5, l: .1, g: 'shrug' }, { t: -.6, l: 0, y: .2 }];
-  let thTimers = [], thFx = null, thLabel = null, thN = 0, thLast = 0;
+  const EMO_FX = { joy: '🎉', excited: '🤩', curious: '🤔', surprised: '😮', playful: '😜', proud: '😎', empathy: '💛', thinking: '💭', serious: '📌', neutral: '✨' };
+  let thTimers = [], thFx = null, thLabel = null, thN = 0, thLast = 0, fxLayer = null;
   function thText(t) { if (thLabel) thLabel.textContent = ' · ' + t; }
   function thAdd(icon, logo) {
-    if (!thFx || thN >= TH_SLOTS.length) return; const [x, y] = TH_SLOTS[thN++], d = document.createElement('div');
-    d.className = 'ti'; d.style.left = x + '%'; d.style.top = y + '%'; d.style.animationDelay = '0s,' + (Math.random() * 1.5).toFixed(2) + 's';
+    if (!thFx || thN >= 6) return; const k = [0, 3, 1, 4, 2, 5][thN++];
+    const arm = document.createElement('div'); arm.className = 'arm'; arm.style.setProperty('--a', (-90 + k * 60) + 'deg');
+    const cr = document.createElement('div'); cr.className = 'cr'; const d = document.createElement('div'); d.className = 'ti'; d.style.animationDelay = '0s,' + (Math.random() * 1.5).toFixed(2) + 's';
     if (logo && /^https:/.test(logo)) { const im = document.createElement('img'); im.alt = ''; im.src = logo; im.onerror = () => { im.remove(); d.textContent = icon || '🌐'; }; d.appendChild(im); } else d.textContent = icon || '✨';
-    thFx.appendChild(d);
+    cr.appendChild(d); arm.appendChild(cr); thFx.firstChild.appendChild(arm);
   }
-  function thStep(st) { if (!st || !st.label || !thFx) return; thLast = Date.now(); thText(String(st.label).slice(0, 70)); thAdd(String(st.icon || '').slice(0, 4), st.logo); if (st.icon === '✅') B.hopT = 0; }
+  function thStep(st) { if (!st || !st.label || !thFx) return; thLast = Date.now(); thText(String(st.label).slice(0, 70)); thAdd(String(st.icon || '').slice(0, 4), st.logo); fxBurst([String(st.icon || '✨').slice(0, 4)]); if (st.icon === '✅') B.hopT = 0; }
+  function fxBurst(list) { // petites réactions qui jaillissent au-dessus de Bobi
+    if (reduce) return; if (!fxLayer) { fxLayer = document.createElement('div'); fxLayer.className = 'tfx2'; fxLayer.setAttribute('aria-hidden', 'true'); cstage.appendChild(fxLayer); }
+    list.slice(0, 3).forEach((e, i) => setTimeout(() => {
+      const sp = document.createElement('span'); sp.className = 'fb'; sp.textContent = e; sp.style.left = (34 + Math.random() * 32) + '%'; sp.style.top = (28 + Math.random() * 20) + '%';
+      sp.style.setProperty('--dx', ((Math.random() - .5) * 120).toFixed(0) + 'px'); sp.style.setProperty('--r', ((Math.random() - .5) * 50).toFixed(0) + 'deg');
+      fxLayer.appendChild(sp); setTimeout(() => sp.remove(), 2100);
+    }, i * 180));
+  }
+  function react(b) { // à chaque phrase : l'émotion + les icônes des mots clés, puis une étincelle
+    const l = (b.say || '').toLowerCase(), list = [EMO_FX[b.ve] || '✨']; TH_ICONS.forEach(([re, ic]) => { if (re.test(l) && list.length < 3 && !list.includes(ic)) list.push(ic); });
+    fxBurst(list); setTimeout(() => { if (B.talking) fxBurst(['✨']); }, 2600);
+  }
   function thinkStart(q, labelEl) {
     thinkStop(); thLabel = labelEl; thN = 0; thLast = 0;
-    thFx = document.createElement('div'); thFx.className = 'tfx'; thFx.setAttribute('aria-hidden', 'true'); cstage.insertBefore(thFx, cstage.firstChild);
-    const l = q.toLowerCase(), icons = ['🔎']; TH_ICONS.forEach(([re, ic]) => { if (re.test(l) && icons.length < 3) icons.push(ic); }); if (icons.length < 3) icons.push('📚', '💡');
-    icons.forEach((ic, i) => thTimers.push(setTimeout(() => thAdd(ic), 400 + i * 700)));
+    thFx = document.createElement('div'); thFx.className = 'tfx'; thFx.setAttribute('aria-hidden', 'true');
+    const orb = document.createElement('div'); orb.className = 'orb'; orb.style.setProperty('--R', Math.round(Math.min(cstage.clientWidth, cstage.clientHeight) * .4) + 'px'); thFx.appendChild(orb); cstage.insertBefore(thFx, cstage.firstChild);
+    const l = q.toLowerCase(), icons = ['🔎']; TH_ICONS.forEach(([re, ic]) => { if (re.test(l) && icons.length < 4) icons.push(ic); }); if (icons.length < 3) icons.push('📚', '💡');
+    icons.forEach((ic, i) => thTimers.push(setTimeout(() => thAdd(ic), 350 + i * 600)));
     let pi = 0, po = 0; thText(TH_PHASES[0]);
     thTimers.push(setInterval(() => { if (Date.now() - thLast > 2200 && pi < TH_PHASES.length - 1) thText(TH_PHASES[++pi]); }, 1900));
     thTimers.push(setInterval(() => { const p = TH_POSES[po++ % TH_POSES.length]; B.tiltT = p.t; B.leanT = p.l; B.yawT = isWide() ? (p.y || 0) : 0; B.gest = p.g || null; B.gT = 0; }, 1500));
+    thTimers.push(setInterval(() => fxBurst([['✨', '💭', '🔎', '💡', '⭐'][Math.random() * 5 | 0]]), 900));
   }
   function thinkStop() {
     thTimers.forEach(t => { clearTimeout(t); clearInterval(t); }); thTimers = []; thLabel = null;
@@ -1319,7 +1346,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
      Mode requête/réponse : window.Bobi.config.endpoint = 'https://…/chat'  → POST { message, history, state } → réponse JSON ci-dessus.
      Mode poussé : Bobi.connect('wss://…')  ou  Bobi.connect('https://…/events') (SSE).
      Synchro voix externe (TTS) : Bobi.amp(niveau) à chaque mot / enveloppe audio fait bouger la tête et allumer les oreillettes. */
-  const BOBI_API = { endpoint: '/api/chat', headers: {}, timeoutMs: 45000 }; // cerveau Gemini (même serveur que ce site)
+  const BOBI_API = { endpoint: '/api/chat', headers: {}, timeoutMs: 100000 }; // cerveau Gemini (même serveur que ce site)
   let bws = null, bes = null;
   function lookFrom(v) {
     if (typeof v === 'string') B.lookMode = ['user', 'pointer', 'away', 'auto'].includes(v) ? v : 'auto';
@@ -1331,19 +1358,30 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     const beats = arr.slice(0, 6).map(normBeat).filter(b => b.say);
     return beats.length ? { beats, next: (Array.isArray(j.next) ? j.next : Array.isArray(j.suggestions) ? j.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean) } : null;
   }
-  async function callApi(q) {
+  async function callApi(q, my) {
     for (let a = 0; a < 2; a++) {
       const ac = new AbortController(), to = setTimeout(() => ac.abort(), BOBI_API.timeoutMs);
       try {
         const r = await fetch(BOBI_API.endpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, BOBI_API.headers), body: JSON.stringify({ userId: UID, message: q, stream: true, history: hist.slice(-6), state: bobiState() }), signal: ac.signal });
         if (r.ok && /ndjson/.test(r.headers.get('content-type') || '') && r.body && r.body.getReader) {
-          const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '', result = null;
-          for (;;) {
-            const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;
-            while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!line) continue; let m; try { m = JSON.parse(line); } catch (e) { continue; }
-              if (m.step) thStep(m.step); else if (m.done) result = normRes(m.done); else if (m.error) result = m.fallback ? normRes(m.fallback) : null; }
-          }
-          return result;
+          const L = { beats: [], next: [], done: false, w: null }, wake = () => { const w = L.w; L.w = null; if (w) w(); };
+          L.wait = () => new Promise(res => { L.w = res; });
+          let first; const firstP = new Promise(res => { first = res; }), to2 = setTimeout(() => ac.abort(), 150000);
+          (async () => {
+            const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+            for (;;) {
+              const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;
+              while ((i = buf.indexOf('\n')) >= 0) {
+                const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!line) continue; let m; try { m = JSON.parse(line); } catch (e) { continue; }
+                if (my !== undefined && my !== runId) { try { ac.abort(); } catch (e) { } return; }
+                if (m.step) thStep(m.step);
+                else if (m.beat) { const nb = normBeat(m.beat); if (nb.say) { L.beats.push(nb); prefetchBeats([nb]); wake(); first(L); } }
+                else if (m.done) L.next = (Array.isArray(m.done.suggestions) ? m.done.suggestions : []).slice(0, 3).map(x => S(x, 70)).filter(Boolean);
+                else if (m.error && !L.beats.length && m.fallback) { const fb = normRes(m.fallback); if (fb) { fb.beats.forEach(b => L.beats.push(b)); wake(); first(L); } }
+              }
+            }
+          })().catch(e => console.warn('flux Bobi interrompu', e)).finally(() => { clearTimeout(to2); L.done = true; wake(); first(L.beats.length ? L : null); });
+          return await firstP;
         }
         if (r.ok) return normRes(await r.json());
         if (a === 0 && (r.status === 429 || r.status >= 500)) { await new Promise(s => setTimeout(s, 1500)); continue; }
@@ -1418,7 +1456,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   const normBeat = b => {
     const e0 = b && b.emotion, g0 = b && b.gesture, em = EAMAP(e0), g = GMAP[g0] || g0;
     return {
-      say: S(b && b.say, 260), emotion: EMO[em] ? em : 'content', ve: S((b && b.ve) || e0, 20),
+      say: S(b && b.say, 420), emotion: EMO[em] ? em : 'content', ve: S((b && b.ve) || e0, 20),
       gesture: ['nod', 'hop', 'walk', 'lean', 'point', 'wave', 'shake', 'present', 'shrug'].includes(g) ? g : 'nod',
       media: adaptMedia(b && b.media), look: b && b.look !== undefined ? b.look : null
     };
@@ -1429,7 +1467,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   async function plan(q, topic, my) {
     if (topic) { await wait(650); return { beats: topic.beats, next: topic.next }; }
-    if (BOBI_API.endpoint) { const ra = await callApi(q); if (ra) return ra; const t0 = findTopic(q); return t0 ? { beats: t0.beats, next: t0.next } : say1("Mon serveur ne répond pas pour l'instant (il se réveille peut-être). Redemande-moi dans quelques secondes !"); }
+    if (BOBI_API.endpoint) { const ra = await callApi(q, my); if (ra) return ra; const t0 = findTopic(q); return t0 ? { beats: t0.beats, next: t0.next } : say1("Mon serveur ne répond pas pour l'instant (il se réveille peut-être). Redemande-moi dans quelques secondes !"); }
     const sample = await getSample();
     if (!sample) {
       const t = findTopic(q);
@@ -1465,9 +1503,12 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     dots.remove();
     if (!res) { block.remove(); setBusy(false); setStatus('prêt', ''); return; }
     const spoken = []; voiceLock = false; prefetchBeats(res.beats);
-    for (const b of res.beats) {
+    for (let bi = 0; ; bi++) {
+      while (bi >= res.beats.length && res.done === false) await res.wait();
+      if (bi >= res.beats.length) break;
+      const b = res.beats[bi];
       if (my !== runId) return;
-      applyBeat(b);
+      applyBeat(b); react(b);
       const p = document.createElement('p'); p.className = 'say2'; block.appendChild(p);
       await speak(p, b.say, my, { emo: b.ve }); spoken.push(b.say);
       if (my !== runId) return;
@@ -1528,7 +1569,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     const on = chatOn;
     document.body.classList.toggle('in-chat', on);
     if (on) {
-      if (!entered) { entered = true; renderSugs(); getSample().then(s => { if (!s) $('#hint').textContent = 'Mode hors ligne : Bobi connaît 4 sujets préparés.'; }); }
+      if (!entered) { entered = true; renderSugs(); getSample().then(s => { if (!s && !BOBI_API.endpoint) $('#hint').textContent = 'Mode hors ligne : Bobi connaît 4 sujets préparés.'; }); }
       initStage().then(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); });
       if (chat.classList.contains('empty') && !hi.textContent) greet();
       setTimeout(() => { if (isWide()) ta.focus({ preventScroll: true }); }, 400);
