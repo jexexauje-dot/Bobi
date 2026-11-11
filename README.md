@@ -78,3 +78,10 @@ async function ask(message) {
 
 ## Routes
 `GET /api/health` · `GET /api/vocab` · `POST /api/greet` · `POST /api/chat {userId,message}` · `POST /api/tts {userId,text,emotion}` (renvoie `audio/wav`, en-tête `x-duration-ms`) · `GET /api/idle`
+
+---------------------------------------------------------------------
+## NOUVEAUTÉS (cercle média de Bobi)
+- Quand Bobi explique, il se réduit à 1/7 (variable CSS `--mini` dans `.cstage`) et montre dans son cercle : animation (`anim`), image Wikipédia, vidéo. Toucher le cercle le ferme.
+- `anim` : animations déclaratives générées par Gemini (décor + emojis animés, traînée, impact). Aucune exécution de code.
+- Vidéos sans clé : Wikimedia Commons (lecture directe). Avec `YOUTUBE_API_KEY` : intégration YouTube.
+- Vitesse : médias cherchés en parallèle, images Wikipédia en/fr en parallèle, médias affichés pendant la voix, voix Gemini abandonnée après 3,5 s au profit de la voix du navigateur.

@@ -11,13 +11,14 @@ const GESTURES = ['idle', 'wave', 'point', 'present', 'shrug', 'think', 'nod', '
 const EMOTIONS = ['neutral', 'joy', 'curious', 'excited', 'thinking', 'empathy', 'proud', 'surprised', 'playful', 'serious'];
 const EASES = ['smooth', 'snap', 'bounce', 'linear'];
 const SCENES = ['cycle', 'wave', 'bars', 'timeline', 'compare', 'concept', 'projectile'];
-const MEDIA = ['image', 'video', 'site', 'chart', ...SCENES];
+const BGS = ['space', 'sky', 'ocean', 'earth', 'night', 'lab', 'paper', 'fire'], FADES = ['none', 'in', 'out', 'pulse'];
+const MEDIA = ['image', 'video', 'site', 'chart', 'anim', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
 const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'suggestions', 'teaser', 'memory'], properties: {
   beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'intensity', 'gesture', 'look', 'media', 'timeline'], properties: {
-    say: S('STRING', { description: 'Une à deux phrases dites à voix haute. Courte (10-25 mots) pour une question simple ; 25 à 45 mots, riche en faits, pour une explication.' }),
+    say: S('STRING', { description: 'Une à deux phrases dites à voix haute. Courte (10-25 mots) pour une question simple ; 20 à 35 mots, riche en faits, pour une explication.' }),
     emotion: S('STRING', { enum: EMOTIONS }),
     intensity: S('NUMBER', { description: '0 à 1' }),
     gesture: S('STRING', { enum: GESTURES, description: 'Geste préétabli (prioritaire si pas de timeline).' }),
@@ -30,6 +31,9 @@ const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 's
       type: S('STRING', { enum: MEDIA }), title: S('STRING'), caption: S('STRING'),
       query: S('STRING', { description: 'image/video : requête précise en anglais (ex: "Battle of Verdun 1916") ; site : URL' }),
       emoji: S('STRING', { description: 'cycle/concept : un emoji central' }), unit: S('STRING'),
+      bg: S('STRING', { enum: BGS, description: 'anim : décor de fond' }),
+      actors: S('ARRAY', { description: 'anim : 2 à 6 acteurs animés {emoji, x0,y0 (départ), x1,y1 (arrivée) en % 0-100 du cercle, size 6-60, delay (s), dur (s), spin (tours), trail (traînée), fade (none|in|out|pulse), label}', items: S('OBJECT', { properties: {
+        emoji: S('STRING'), x0: S('NUMBER'), y0: S('NUMBER'), x1: S('NUMBER'), y1: S('NUMBER'), size: S('NUMBER'), delay: S('NUMBER'), dur: S('NUMBER'), spin: S('NUMBER'), trail: S('BOOLEAN'), fade: S('STRING', { enum: FADES }), label: S('STRING') } }) }),
       items: S('ARRAY', { description: 'cycle : 3 à 6 étapes {icon,label} ; timeline : 3 à 5 repères {when,label} ; bars : 2 à 6 {label,value} ; concept : 2 à 4 {label}', items: S('OBJECT', { properties: { icon: S('STRING'), when: S('STRING'), label: S('STRING'), value: S('NUMBER') } }) }),
       left: S('OBJECT', { properties: { label: S('STRING'), points: S('ARRAY', { items: S('STRING') }) } }), right: S('OBJECT', { properties: { label: S('STRING'), points: S('ARRAY', { items: S('STRING') }) } }),
       waves: S('ARRAY', { description: 'wave : 1 à 3 ondes', items: S('OBJECT', { properties: { label: S('STRING'), wl: S('NUMBER', { description: '0.6 à 4' }) } }) }),
@@ -40,10 +44,12 @@ const schema = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 's
   memory: S('ARRAY', { description: 'Faits durables appris sur l\'utilisateur (prénom, niveau, centres d\'intérêt).', items: S('STRING') }) } });
 
 const SYSTEM = `Tu es BOBI, un petit robot-radiocassette chaleureux, curieux et drôle : un compagnon IA qui explique le monde. Tu parles français naturel, ton complice, jamais condescendant, jamais scolaire.
-LONGUEUR ADAPTÉE : question simple (fait court, définition, salut, merci, blague, oui/non) → réponse BRÈVE : 1 à 3 beats de 10 à 25 mots, sans média sauf s'il aide vraiment. Question qui demande de comprendre (pourquoi, comment, histoire, science, comparaison, conseil) → réponse DÉVELOPPÉE : 4 à 6 beats de 25 à 45 mots. Dans les deux cas, le PREMIER beat est toujours court (10 à 15 mots) : une accroche qui lance la réponse sans attendre.
+LONGUEUR ADAPTÉE : question simple (fait court, définition, salut, merci, blague, oui/non) → réponse BRÈVE : 1 à 3 beats de 10 à 25 mots, sans média sauf s'il aide vraiment. Question qui demande de comprendre (pourquoi, comment, histoire, science, comparaison, conseil) → réponse DÉVELOPPÉE : 4 à 5 beats de 20 à 35 mots. Dans les deux cas, le PREMIER beat est toujours court (10 à 15 mots) : une accroche qui lance la réponse sans attendre.
 CONTENU : quand tu développes, tu APPRENDS vraiment quelque chose : faits précis (dates, chiffres, noms, causes, conséquences), un exemple concret ou une anecdote surprenante, une vraie explication du « pourquoi ». Interdit : les réponses creuses ou vagues. Ne rallonge jamais pour rien.
 CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites). Pas de geste gratuit. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain. Varie, ne répète pas le même geste deux fois de suite.
-MÉDIAS (1 ou 2 par réponse explicative, jamais sur chaque beat) : pour un sujet CONCRET (événement historique, lieu, personne, animal, objet, œuvre, phénomène visible) choisis 'image' avec une query précise en anglais ; c'est le choix par défaut. Pour un processus, une chronologie, une comparaison, des chiffres ou un mécanisme, choisis un schéma : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Option : 'video' (query), 'site' (URL si l'utilisateur parle d'un site). IMPORTANT : n'annonce presque jamais le média (pas de « regarde ce schéma » à chaque fois) ; ta phrase doit être utile même sans lui, et tu ne le mentionnes que très rarement, de façon naturelle et variée. Mets alors look='media'.
+MÉDIAS = ta signature : quand tu EXPLIQUES un sujet (histoire, science, philosophie, nature, espace, technique, art…), tu montres du concret dans ton cercle, en plusieurs beats consécutifs, cohérents avec ce que tu dis. Ordre idéal : beat 1 ou 2 = 'anim' (petite animation qui montre le phénomène), beat suivant = 'image' (query précise en anglais, ex: \"Chelyabinsk meteor\"), beat suivant = 'video' (query précise en anglais). Les médias illustrent la phrase du beat : ne les annonce presque jamais (« regarde »), dis des faits. Pas de média sur une question simple (salut, merci, définition d'un mot, blague).
+'anim' : bg (space|sky|ocean|earth|night|lab|paper|fire) + 2 à 6 'actors' {emoji, x0,y0 → x1,y1 en % du cercle (0-100), size 6-60, delay, dur (secondes), spin, trail, fade, label}. Exemple météorite : bg space ; 🌍 size 46 fixe (x0=x1=50,y0=y1=62) ; ☄️ size 16 de (8,6) à (48,52), dur 2.4, trail true ; 💥 size 34 en (50,56), delay 2.4, dur 0.8, fade pulse. Mets les acteurs fixes en premier, les mobiles ensuite, les effets d'impact à la fin.
+Schémas (si c'est un processus, une chronologie, une comparaison, des chiffres) : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Option : 'site' (URL si l'utilisateur parle d'un site). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Mets look='media' quand un média est affiché.
 STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
 /* ---------- 3. Mémoire utilisateur (fichier JSON — remplaçable par une vraie base) ---------- */
@@ -67,12 +73,20 @@ function cleanTimeline(tl) {
 const cache = new Map(); const cached = async (k, fn) => { if (cache.has(k)) return cache.get(k); const v = await fn().catch(() => null); cache.set(k, v); if (cache.size > 500) cache.delete(cache.keys().next().value); return v; };
 const to = (ms) => AbortSignal.timeout(ms);
 
+const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, getJson = async u => (await fetch(u, { headers: UA, signal: to(4000) })).json();
+const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 async function resolveMedia(m, emit = () => {}) {
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
   if (m.type === 'image') emit({ icon: '🖼️', label: 'Je cherche une image : ' + String(m.query || '').slice(0, 40) });
   else if (m.type === 'video') emit({ icon: '▶️', label: 'Je cherche une vidéo sur le sujet' });
+  else if (m.type === 'anim') emit({ icon: '🎬', label: 'Je prépare une animation' });
   else if (m.type === 'site') { const u0 = safeUrl(m.query); if (u0) emit({ icon: '🌐', label: 'Je regarde le site ' + u0.hostname, logo: 'https://www.google.com/s2/favicons?sz=64&domain=' + u0.hostname }); }
   else emit({ icon: '📊', label: 'Je dessine un schéma' + (base.title ? ' : ' + base.title.slice(0, 40) : '') });
+  if (m.type === 'anim') {
+    const T = (x, n) => String(x ?? '').slice(0, n), N = (v, a, b, d) => Number.isFinite(+v) && v !== null && v !== '' ? Math.max(a, Math.min(b, +v)) : d;
+    const actors = (Array.isArray(m.actors) ? m.actors : []).slice(0, 7).map(a => ({ emoji: T(a?.emoji, 6), x0: N(a?.x0, -25, 125, 50), y0: N(a?.y0, -25, 125, 50), x1: N(a?.x1, -25, 125, N(a?.x0, -25, 125, 50)), y1: N(a?.y1, -25, 125, N(a?.y0, -25, 125, 50)), size: N(a?.size, 5, 70, 16), delay: N(a?.delay, 0, 8, 0), dur: N(a?.dur, .3, 8, 2), spin: N(a?.spin, -4, 4, 0), trail: !!a?.trail, fade: FADES.includes(a?.fade) ? a.fade : 'none', label: T(a?.label, 22) })).filter(a => a.emoji);
+    return actors.length >= 2 ? { ...base, bg: BGS.includes(m.bg) ? m.bg : 'night', actors } : undefined;
+  }
   if (SCENES.includes(m.type)) {
     const sl = (a, n) => Array.isArray(a) ? a.slice(0, n) : [], T = (x, n) => String(x ?? '').slice(0, n), side = o => o && T(o.label, 28) && { label: T(o.label, 28), points: sl(o.points, 3).map(x => T(x, 70)).filter(Boolean) };
     const items = sl(m.items, 6).map(i => ({ icon: T(i?.icon, 4), when: T(i?.when, 14), label: T(i?.label, 60), value: i?.value != null && Number.isFinite(+i.value) && +i.value >= 0 ? +i.value : undefined })).filter(i => i.label);
@@ -87,20 +101,27 @@ async function resolveMedia(m, emit = () => {}) {
     return { ...base, angles: sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))).concat([]).slice(0, 3).length ? sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))) : [45], v0: Math.max(5, Math.min(40, +m.v0 || 20)) };
   }
   if (m.type === 'chart') { const c = m.chart; return c && c.labels && c.values && c.labels.length === c.values.length && c.labels.length <= 20 ? { ...base, chart: c } : undefined; }
-  if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikipédia (images d'articles, très pertinentes) puis Wikimedia Commons ; l'API exige un User-Agent
-    const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, get = async u => (await fetch(u, { headers: UA, signal: to(5000) })).json();
-    for (const lang of ['en', 'fr']) {
-      const r = await get(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4&prop=pageimages&piprop=thumbnail&pithumbsize=900&gsrsearch=` + encodeURIComponent(m.query)).catch(() => null);
-      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source);
-      if (p) return { ...base, url: p.thumbnail.source, credit: 'Wikipédia : ' + p.title, page: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(p.title.replace(/ /g, '_')) };
-    }
-    const r = await get('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'));
-    const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl); if (!p) return undefined; const i = p.imageinfo[0];
-    return { ...base, url: i.thumburl, credit: (i.extmetadata?.Artist?.value || 'Wikimedia Commons').replace(/<[^>]+>/g, '').slice(0, 80), page: i.descriptionurl }; });
-  if (m.type === 'video' && m.query) return cached('yt:' + m.query, async () => {
-    const search = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(m.query); if (!YT) return { ...base, search };
-    const r = await (await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&safeSearch=strict&maxResults=1&q=' + encodeURIComponent(m.query) + '&key=' + YT, { signal: to(6000) })).json();
-    const v = r.items?.[0]; return v ? { ...base, title: base.title || v.snippet.title, embed: 'https://www.youtube-nocookie.com/embed/' + v.id.videoId, search } : { ...base, search }; });
+  if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikipédia en/fr EN PARALLÈLE (premier qui répond), sinon Wikimedia Commons
+    const wiki = async lang => {
+      const r = await getJson(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4&prop=pageimages&piprop=thumbnail&pithumbsize=900&gsrsearch=` + encodeURIComponent(m.query));
+      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source); if (!p) throw 0;
+      return { ...base, url: p.thumbnail.source, credit: 'Wikipédia : ' + p.title, page: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(p.title.replace(/ /g, '_')) };
+    };
+    return await Promise.any([wiki('en'), wiki('fr')]).catch(async () => {
+      const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'));
+      const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl); if (!p) return undefined; const i = p.imageinfo[0];
+      return { ...base, url: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl };
+    }); });
+  if (m.type === 'video' && m.query) return cached('vid:' + m.query, async () => {
+    const search = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(m.query);
+    if (YT) { const r = await getJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&safeSearch=strict&maxResults=1&q=' + encodeURIComponent(m.query) + '&key=' + YT).catch(() => null);
+      const v = r?.items?.[0]; if (v) return { ...base, title: base.title || v.snippet.title, embed: 'https://www.youtube-nocookie.com/embed/' + v.id.videoId, search }; }
+    // sans clé : vidéos libres de Wikimedia Commons (lecture directe dans le cercle de Bobi)
+    const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=640&gsrsearch=' + encodeURIComponent(m.query + ' filetype:video')).catch(() => null);
+    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
+    const p = vids.find(p => /webm|mp4/.test(p.imageinfo[0].mime)) || vids[0];
+    if (p) { const i = p.imageinfo[0]; return { ...base, file: i.url, mime: i.mime, poster: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl, search }; }
+    return { ...base, search }; });
   if (m.type === 'site' && m.query) { const u = safeUrl(m.query); if (!u) return undefined; return cached('site:' + u.hostname, async () => {
     let embeddable = false; try { const h = await fetch(u.origin, { method: 'HEAD', redirect: 'follow', signal: to(4000) }); const xfo = h.headers.get('x-frame-options'), csp = h.headers.get('content-security-policy') || ''; embeddable = !xfo && !/frame-ancestors/i.test(csp); } catch {}
     return { ...base, url: u.href, domain: u.hostname, logo: 'https://www.google.com/s2/favicons?sz=128&domain=' + u.hostname, embeddable, mode: embeddable ? 'iframe' : 'card' }; }); }
@@ -111,7 +132,7 @@ async function cleanBeat(b, emit = () => {}) {
   if (!b || !b.say) return null;
   const out = { say: String(b.say).slice(0, 420), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
     gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' };
-  const m = await withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 5000); if (m) out.media = m;
+  const m = await withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 4500); if (m) out.media = m;
   if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée' });
   else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
   return out;
@@ -181,7 +202,7 @@ async function geminiStream(contents, system, onBeat, emit = () => {}) {
   }
   throw Object.assign(new Error('Gemini ' + (last?.status || 'indisponible') + ' ' + (last?.msg || '').replace(/\s+/g, ' ').slice(0, 200)), { status: last?.status === 429 || [...blocked.values()].some(t => t > Date.now()) ? 429 : 502 });
 }
-const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Regarde ce schéma, il montre comment je fonctionne.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'cycle', title: 'Comment je marche', emoji: '🤖', items: [{ icon: '🧑', label: 'Toi' }, { icon: '🖥️', label: 'Serveur' }, { icon: '🧠', label: 'Gemini' }, { icon: '🗣️', label: 'Bobi' }] } },
+const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Voilà ce qui arrive quand une météorite touche la Terre.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'anim', title: 'Une météorite touche la Terre', bg: 'space', actors: [{ emoji: '🌍', x0: 50, y0: 64, x1: 50, y1: 64, size: 46 }, { emoji: '☄️', x0: 8, y0: 6, x1: 47, y1: 52, size: 16, dur: 2.4, trail: true }, { emoji: '💥', x0: 50, y0: 56, x1: 50, y1: 56, size: 30, delay: 2.4, dur: .8, fade: 'pulse' }] } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
 
 /* ---------- 6. Routes ---------- */
@@ -207,7 +228,7 @@ app.post('/api/chat', async (req, res) => {
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
     const beats = []; let chain = Promise.resolve();
-    const onBeat = raw => { chain = chain.then(async () => { if (beats.length >= 8) return; const b = await cleanBeat(raw, emit).catch(() => null); if (!b) return; beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
+    const onBeat = raw => { const job = cleanBeat(raw, emit).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle des beats suivants */ chain = chain.then(async () => { if (beats.length >= 8) return; const b = await job; if (!b) return; beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, SYSTEM, onBeat, emit); await chain;
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
