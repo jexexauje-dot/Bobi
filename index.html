@@ -393,6 +393,12 @@ body.in-chat{overflow:hidden}
 .orbm .mplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;font-size:30px;z-index:6;background:rgba(5,8,22,.7)}
 .cstage.explain .orbm.big{position:fixed!important;left:50%!important;top:50%!important;width:min(94vw,1100px)!important;height:auto!important;max-height:90vh;aspect-ratio:16/9;border-radius:18px;z-index:99999;translate:-50% -50%;box-shadow:0 0 0 100vmax rgba(0,0,0,.82)}
 .orbm.big video,.orbm.big iframe{object-fit:contain;background:#000}
+
+.obtn[hidden]{display:none}
+.cstage.explain .orbm.wide{width:min(94%,560px);height:auto;aspect-ratio:16/9;border-radius:20px}
+.orbm.wide .cap{left:10px;top:10px;bottom:auto;transform:none;max-width:55%;text-align:left}
+.orbm.wide .octl{top:8px;right:8px;left:auto;transform:none}
+@media (max-width:899px){.cstage.explain .orbm.wide{height:92%;width:auto}}
 </style>
 
 <main class="wrap" id="top">
@@ -1071,18 +1077,18 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function orbCtl(o) { const c = document.createElement('div'); c.className = 'octl'; const mk = (t, lab, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'obtn'; b.textContent = t; b.setAttribute('aria-label', lab); b.addEventListener('click', e => { e.stopPropagation(); fn(); }); c.appendChild(b); }; mk('⤢', 'Agrandir (avec le son)', () => toggleBig()); mk('✕', 'Fermer', () => hideOrb()); o.appendChild(c); }
   function ytFrame(src, title) { const f = document.createElement('iframe'); f.src = src; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = title || 'Vidéo'; return f; }
   function showOrb(m) {
-    const o = ensureOrb(); clearTimeout(orbTimer); stopAnims(); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } o.innerHTML = ''; delete o.dataset.music;
+    const o = ensureOrb(); clearTimeout(orbTimer); stopAnims(); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } o.innerHTML = ''; delete o.dataset.music; o.classList.toggle('wide', m.type === 'video');
     const cap = t => { if (!t) return; const c = document.createElement('div'); c.className = 'cap'; c.textContent = S(t, 90); o.appendChild(c); };
     let ok = false;
     if (m.type === 'image' && /^https:\/\//.test(m.url || '')) { const im = new Image(); im.alt = S(m.title, 80); im.referrerPolicy = 'no-referrer'; im.onerror = () => { if (o.contains(im)) hideOrb(); }; im.src = m.url; o.appendChild(im); cap(m.credit ? 'Image : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'video' && /^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.appendChild(ytFrame(m.embed + '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1', S(m.title, 80))); cap(m.title); ok = true; }
-    else if (m.type === 'video' && /^https:\/\//.test(m.file || '')) { const v = document.createElement('video'); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.controls = true; if (/^https:\/\//.test(m.poster || '')) v.poster = m.poster; v.onerror = () => { if (o.contains(v)) hideOrb(); }; v.src = m.file; o.appendChild(v); const pr = v.play(); if (pr && pr.catch) pr.catch(() => { }); cap(m.credit ? 'Vidéo : ' + m.credit : m.title); ok = true; }
+    else if (m.type === 'video' && /^https:\/\//.test(m.file || '')) { const v = document.createElement('video'); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.controls = true; if (/^https:\/\//.test(m.poster || '')) v.poster = m.poster; v.onerror = () => { if (o.contains(v)) hideOrb(); }; v.src = m.file; o.appendChild(v); const pb = document.createElement('button'); pb.type = 'button'; pb.className = 'obtn mplay'; pb.textContent = '▶'; pb.setAttribute('aria-label', 'Lire la vidéo'); pb.hidden = true; v.addEventListener('play', () => { pb.hidden = true; }); v.addEventListener('pause', () => { pb.hidden = false; }); pb.addEventListener('click', e => { e.stopPropagation(); v.muted = bigOn ? false : v.muted; v.play().catch(() => { }); }); o.appendChild(pb); const pr = v.play(); if (pr && pr.catch) pr.catch(() => { pb.hidden = false; }); cap(m.credit ? 'Vidéo : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'anim') { const d = document.createElement('div'); o.appendChild(d); cstage.classList.add('explain'); renderAnim(d, m); cap(m.title); ok = true; }
     else if (m.type === 'music') {
       const cv = new Image(); cv.alt = S(m.title, 80); cv.referrerPolicy = 'no-referrer'; if (/^https:\/\//.test(m.cover || '')) cv.src = m.cover; else cv.style.background = '#1b1b2a'; o.appendChild(cv); o.dataset.music = '1';
       const b = document.createElement('button'); b.type = 'button'; b.className = 'obtn mplay'; b.textContent = '▶'; b.setAttribute('aria-label', 'Lancer la musique');
       b.addEventListener('click', e => { e.stopPropagation();
-        if (/^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.innerHTML = ''; o.dataset.music = '1'; o.appendChild(ytFrame(m.embed + '?autoplay=1&playsinline=1&rel=0&enablejsapi=1', S(m.title, 80))); orbCtl(o); cap([m.title, m.artist].filter(Boolean).join(' · ')); return; }
+        if (/^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.innerHTML = ''; o.dataset.music = '1'; o.classList.add('wide'); o.appendChild(ytFrame(m.embed + '?autoplay=1&playsinline=1&rel=0&enablejsapi=1', S(m.title, 80))); orbCtl(o); cap([m.title, m.artist].filter(Boolean).join(' · ')); return; }
         if (!orbAudio && /^https:\/\//.test(m.audio || '')) { orbAudio = new Audio(m.audio); orbAudio.onended = () => { b.textContent = '▶'; }; }
         if (!orbAudio) return; if (orbAudio.paused) { orbAudio.play().catch(() => { }); b.textContent = '⏸'; } else { orbAudio.pause(); b.textContent = '▶'; } });
       o.appendChild(b); cap([m.title, m.artist].filter(Boolean).join(' · ') + (m.credit && !m.embed ? ' (' + m.credit + ')' : '')); ok = true;

@@ -57,6 +57,7 @@ STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, dét
 MÉDIAS SYSTÉMATIQUES (RÈGLE PRIORITAIRE, même si l'utilisateur ne demande rien) : pour toute question de science (physique, maths, biologie, chimie, astronomie…), histoire, littérature, arts, philosophie, géographie, technique, tu illustres CHAQUE beat sauf le premier (l'accroche courte) avec un média différent, dans l'ordre chronologique/logique de ton récit. Pour un objet, lieu, personne, événement, œuvre, animal : 'image' avec une query anglaise précise propre à ce beat (pas la même image deux fois). Pour un mécanisme, un processus, une loi, une démonstration, un concept abstrait ou si tu n'es pas sûr qu'une image existe : 'anim' simple. Une 'video' (query précise) dans l'un des beats du milieu. Jamais deux beats avec le même média.
 VIDÉOS : toujours courtes (moins de 2 minutes) et modernes (2023-2026) : mets modern=true ; modern=false SEULEMENT si le sujet exige des archives anciennes (guerres, histoire, événements passés).
 MUSIQUE : si l'utilisateur demande d'écouter ou de chercher une chanson, un morceau, un artiste, tu mets au 2e beat un média 'music' avec query = « titre artiste » (ex: \"Despacito Luis Fonsi\"). Ton 1er beat dit que tu l'as trouvée et que l'utilisateur appuie sur ▶ pour que tu la lances (tu ne lances jamais sans son accord).
+NOUVEAUX MÉDIAS : à chaque demande (« une autre chanson », « encore une image », « une autre vidéo »…) tu donnes un média DIFFÉRENT de ceux déjà montrés (varie la query : autre version, autre artiste, autre angle, autre époque). Tu réponds toujours à la demande de média, même si tu viens d'en montrer un.
 COHÉRENCE : chaque média doit illustrer EXACTEMENT ce que dit la phrase du beat et le sujet de la conversation. Sa query contient toujours le nom du sujet (ex: pour une météorite → "meteorite", "Chelyabinsk meteor"), jamais un mot vague. Au moindre doute, pas de média.
 MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' ou un schéma (cycle, timeline…).
 RELANCES : tes 3 suggestions sont des ouvertures « jusqu'où ? » qui donnent envie d'aller plus loin (le détail qui choque, la question suivante naturelle). Une des suggestions peut être un défi : « Je te l'explique à ma façon, corrige-moi ». Remplis 'topic' quand tu as enseigné quelque chose.
@@ -80,7 +81,7 @@ function cleanTimeline(tl) {
     pose: (k.pose || []).filter(p => BONES[p.bone] && Array.isArray(p.rot)).map(p => ({ bone: p.bone, rot: [0, 1, 2].map(i => clamp(p.rot[i], BONES[p.bone])) })) }))
     .map(k => (last = k.t, k)).filter(k => k.pose.length);
 }
-const cache = new Map(); const cached = async (k, fn) => { if (cache.has(k)) return cache.get(k); const v = await fn().catch(() => null); cache.set(k, v); if (cache.size > 500) cache.delete(cache.keys().next().value); return v; };
+const cache = new Map(); const cached = async (k, fn) => { if (cache.has(k)) return cache.get(k); const v = await fn().catch(() => null); if (v) cache.set(k, v); if (cache.size > 500) cache.delete(cache.keys().next().value); return v; };
 const to = (ms) => AbortSignal.timeout(ms);
 
 const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, getJson = async u => (await fetch(u, { headers: UA, signal: to(4000) })).json();
@@ -88,7 +89,9 @@ const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u030
 const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'photo', 'image', 'video', 'file', 'des', 'les', 'une', 'dans', 'pour', 'avec', 'sur']);
 const relevant = (title, q) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; return ks.some(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)); };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
-async function resolveMedia(m, emit = () => {}) {
+const mkey = m => m && (m.url || m.file || m.embed || m.audio || '');
+async function resolveMedia(m, emit = () => {}, skip = []) {
+  const SK = (skip || []).slice(-40), sk = SK.length ? '|' + crypto.createHash('sha1').update(SK.join('|')).digest('hex').slice(0, 8) : '';
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
   if (m.type === 'image') emit({ icon: '🖼️', label: 'Je cherche une image : ' + String(m.query || '').slice(0, 40) });
   else if (m.type === 'video') emit({ icon: '▶️', label: 'Je cherche une vidéo sur le sujet' });
@@ -115,33 +118,33 @@ async function resolveMedia(m, emit = () => {}) {
     return { ...base, angles: sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))).concat([]).slice(0, 3).length ? sl(m.angles, 3).map(a => Math.max(5, Math.min(85, +a || 45))) : [45], v0: Math.max(5, Math.min(40, +m.v0 || 20)) };
   }
   if (m.type === 'chart') { const c = m.chart; return c && c.labels && c.values && c.labels.length === c.values.length && c.labels.length <= 20 ? { ...base, chart: c } : undefined; }
-  if (m.type === 'image' && m.query) return cached('img:' + m.query, async () => { // Wikipédia en/fr EN PARALLÈLE (premier qui répond), sinon Wikimedia Commons
+  if (m.type === 'image' && m.query) return cached('img:' + m.query + sk, async () => { // Wikipédia en/fr EN PARALLÈLE (premier qui répond), sinon Wikimedia Commons
     const wiki = async lang => {
       const r = await getJson(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4&prop=pageimages&piprop=thumbnail&pithumbsize=900&gsrsearch=` + encodeURIComponent(m.query));
-      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source && relevant(p.title, m.query)); if (!p) throw 0;
+      const p = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).find(p => p.thumbnail?.source && !SK.includes(p.thumbnail.source) && relevant(p.title, m.query)); if (!p) throw 0;
       return { ...base, url: p.thumbnail.source, credit: 'Wikipédia : ' + p.title, page: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(p.title.replace(/ /g, '_')) };
     };
     return await Promise.any([wiki('en'), wiki('fr')]).catch(async () => {
       const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=900&gsrsearch=' + encodeURIComponent(m.query + ' filetype:bitmap'));
-      const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl && relevant(p.title, m.query)); if (!p) return undefined; const i = p.imageinfo[0];
+      const p = Object.values(r.query?.pages || {}).find(p => p.imageinfo?.[0]?.thumburl && !SK.includes(p.imageinfo[0].thumburl) && relevant(p.title, m.query)); if (!p) return undefined; const i = p.imageinfo[0];
       return { ...base, url: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl };
     }).then(async found => { if (found) return found;
       const r = await getJson('https://images-api.nasa.gov/search?media_type=image&page_size=8&q=' + encodeURIComponent(m.query)).catch(() => null); // NASA : excellent pour l'espace et la science
-      const it = (r?.collection?.items || []).find(i => /^https:\/\//.test(i.links?.[0]?.href || '') && relevant((i.data?.[0]?.title || '') + ' ' + (i.data?.[0]?.keywords || []).join(' '), m.query));
+      const it = (r?.collection?.items || []).find(i => /^https:\/\//.test(i.links?.[0]?.href || '') && !SK.includes(i.links[0].href) && relevant((i.data?.[0]?.title || '') + ' ' + (i.data?.[0]?.keywords || []).join(' '), m.query));
       return it ? { ...base, url: it.links[0].href, credit: 'NASA : ' + clean(it.data[0].title), page: 'https://images.nasa.gov/details/' + encodeURIComponent(it.data[0].nasa_id) } : undefined; }); });
-  if (m.type === 'video' && m.query) return cached('vid:' + m.query, async () => {
+  if (m.type === 'video' && m.query) return cached('vid:' + m.query + sk, async () => {
     const search = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(m.query);
     if (YT) { const modern = m.modern !== false, q = encodeURIComponent(m.query);
       const ytq = after => getJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&safeSearch=strict&videoDuration=short&maxResults=6&q=' + q + (after ? '&publishedAfter=2023-01-01T00:00:00Z' : '') + '&key=' + YT).catch(() => null);
       let r = await ytq(modern); if (modern && !r?.items?.length) r = await ytq(false);
-      const items = (r?.items || []).filter(v => v.id?.videoId && relevant(v.snippet?.title, m.query));
+      const items = (r?.items || []).filter(v => v.id?.videoId && !SK.includes('https://www.youtube-nocookie.com/embed/' + v.id.videoId) && relevant(v.snippet?.title, m.query));
       if (items.length) { const d = await getJson('https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=' + items.map(v => v.id.videoId).join(',') + '&key=' + YT).catch(() => null);
         const secs = {}; for (const x of d?.items || []) { const t = /PT(?:(\d+)M)?(?:(\d+)S)?/.exec(x.contentDetails?.duration || ''); secs[x.id] = t ? (+t[1] || 0) * 60 + (+t[2] || 0) : 999; }
         const v = items.slice().sort((a, b) => (secs[a.id.videoId] > 120) - (secs[b.id.videoId] > 120) || (secs[a.id.videoId] || 999) - (secs[b.id.videoId] || 999))[0];
         return { ...base, title: base.title || v.snippet.title, embed: 'https://www.youtube-nocookie.com/embed/' + v.id.videoId, search }; } }
     // sans clé : vidéos libres de Wikimedia Commons (lecture directe dans le cercle de Bobi)
     const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|mime|extmetadata|timestamp|size&iiurlwidth=640&gsrsearch=' + encodeURIComponent(m.query + ' filetype:video')).catch(() => null);
-    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => relevant(p.title, m.query) && /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
+    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => relevant(p.title, m.query) && !SK.includes(p.imageinfo?.[0]?.url) && /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
     const modernV = m.modern !== false, rank = p => { const i = p.imageinfo[0]; return (i.duration > 120 ? 2 : 0) + (modernV && !(String(i.timestamp || '') >= '2023') ? 1 : 0) + (/webm|mp4/.test(i.mime) ? 0 : .5); };
     const p = vids.slice().sort((a, b) => rank(a) - rank(b))[0];
     if (p) { const i = p.imageinfo[0]; return { ...base, file: i.url, mime: i.mime, poster: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl, search }; }
@@ -150,10 +153,10 @@ async function resolveMedia(m, emit = () => {}) {
     if (it) { const man = await getJson(it.href.replace(/^http:/, 'https:')).catch(() => null); const urls = (Array.isArray(man) ? man : []).map(u => String(u).replace(/^http:/, 'https:')); const mp4 = urls.find(u => /~medium\.mp4$/.test(u)) || urls.find(u => /\.mp4$/.test(u));
       if (mp4) return { ...base, file: mp4, mime: 'video/mp4', poster: (it.links?.[0]?.href || '').replace(/^http:/, 'https:'), credit: 'NASA : ' + clean(it.data[0].title), page: 'https://images.nasa.gov/details/' + encodeURIComponent(it.data[0].nasa_id), search }; }
     return { ...base, search }; });
-  if (m.type === 'music' && m.query) return cached('mus:' + m.query, async () => {
+  if (m.type === 'music' && m.query) return cached('mus:' + m.query + sk, async () => {
     const r = await getJson('https://itunes.apple.com/search?media=music&entity=song&limit=6&term=' + encodeURIComponent(m.query)).catch(() => null);
-    const it = (r?.results || []).find(x => /^https:\/\//.test(x.previewUrl || '') && relevant((x.trackName || '') + ' ' + (x.artistName || ''), m.query));
-    let embed; if (YT) { const y = await getJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&videoCategoryId=10&maxResults=3&q=' + encodeURIComponent(m.query) + '&key=' + YT).catch(() => null); const v = (y?.items || []).find(v => v.id?.videoId && relevant(v.snippet?.title, m.query)); if (v) embed = 'https://www.youtube-nocookie.com/embed/' + v.id.videoId; }
+    const it = (r?.results || []).find(x => /^https:\/\//.test(x.previewUrl || '') && !SK.includes(x.previewUrl) && relevant((x.trackName || '') + ' ' + (x.artistName || ''), m.query));
+    let embed; if (YT) { const y = await getJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&videoCategoryId=10&maxResults=3&q=' + encodeURIComponent(m.query) + '&key=' + YT).catch(() => null); const v = (y?.items || []).find(v => v.id?.videoId && !SK.includes('https://www.youtube-nocookie.com/embed/' + v.id.videoId) && relevant(v.snippet?.title, m.query)); if (v) embed = 'https://www.youtube-nocookie.com/embed/' + v.id.videoId; }
     if (!it && !embed) return undefined;
     return { ...base, title: it ? it.trackName : base.title, artist: it ? it.artistName : '', cover: it ? String(it.artworkUrl100 || '').replace('100x100', '600x600') : '', audio: it ? it.previewUrl : '', embed, page: it?.trackViewUrl || '', credit: embed ? 'YouTube' : 'Extrait de 30 s (iTunes)' }; });
   if (m.type === 'site' && m.query) { const u = safeUrl(m.query); if (!u) return undefined; return cached('site:' + u.hostname, async () => {
@@ -162,11 +165,11 @@ async function resolveMedia(m, emit = () => {}) {
 }
 const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(undefined), ms))]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function cleanBeat(b, emit = () => {}) {
+async function cleanBeat(b, emit = () => {}, skip = []) {
   if (!b || !b.say) return null;
   const out = { say: String(b.say).slice(0, 420), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
     gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' };
-  const m = await withTimeout(resolveMedia(b.media, emit).catch(() => undefined), 4500); if (m) out.media = m;
+  const m = await withTimeout(resolveMedia(b.media, emit, skip).catch(() => undefined), 4500); if (m) out.media = m;
   if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée' });
   else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
   return out;
@@ -283,11 +286,16 @@ app.post('/api/chat', async (req, res) => {
     let resolveQ; const qP = new Promise(r => { resolveQ = r; });
     const fbImg = qP.then(q => q && !simple ? resolveMedia({ type: 'image', query: q }) : undefined).catch(() => undefined);
     const fbVid = qP.then(q => q && !simple ? resolveMedia({ type: 'video', query: q }) : undefined).catch(() => undefined);
+    const shown = u.shown || (u.shown = []);
+    const intent = /chanson|musique|morceau|[ée]couter|titre de|clip musical/i.test(text) ? 'music' : /vid[ée]o|clip|extrait|film/i.test(text) ? 'video' : /image|photo|montre|voir|illustr|dessin|sch[ée]ma/i.test(text) ? 'image' : null;
+    const rawQ = text.replace(/[?!.,]/g, ' ').replace(/\b(s'il (te|vous) pla[iî]t|cherche|trouve|montre[- ]moi|montre|affiche|fais[- ]moi (voir|[ée]couter)|[ée]coute|lance|mets|met|une?|des?|du|le|la|les|l'|d'|autre|encore|chanson|musique|morceau|titre|image|photo|vid[ée]o|clip|moi|me|de|sur|avec|et)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
+    const fbIntent = intent ? qP.then(q => resolveMedia({ type: intent, query: (q || rawQ), modern: true }, () => {}, shown)).catch(() => undefined) : Promise.resolve(undefined);
     const usedImg = new Set(); let animN = 0, nB = 0;
-    const onBeat = raw => { const job = cleanBeat(raw, emit).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle */ chain = chain.then(async () => {
+    const onBeat = raw => { const job = cleanBeat(raw, emit, shown).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle */ chain = chain.then(async () => {
       if (beats.length >= 8) return; const b = await job; if (!b) return;
       if (b.media && b.media.type === 'image') { if (usedImg.has(b.media.url)) b.media = undefined; else usedImg.add(b.media.url); }
       if (b.media && b.media.type === 'video' && beats.some(x => x.media && x.media.url === b.media.url && x.media.type === 'video')) b.media = undefined;
+      if (intent && !b.media && !beats.some(x => x.media && x.media.type === intent)) { const f = await withTimeout(fbIntent, 6000); if (f && mkey(f) && !shown.includes(mkey(f))) b.media = f; }
       const i = beats.length; // rang du beat : 0 = accroche ; ensuite on garantit un média cohérent, dans l'ordre
       if (!b.media && !simple && i >= 1) {
         let f; const hasVid = beats.some(x => x.media && x.media.type === 'video');
@@ -296,11 +304,12 @@ app.post('/api/chat', async (req, res) => {
         if (!f && animN < 3) { animN++; const q = await withTimeout(qP, 1500); f = await withTimeout(genAnim(b.say, q), 7500); }
         if (f) b.media = f;
       }
+      if (b.media && mkey(b.media)) { shown.push(mkey(b.media)); if (shown.length > 60) shown.splice(0, shown.length - 60); }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80))); resolveQ(''); await chain;
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
-    u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say).join(' ') }] }); u.history = u.history.slice(-20);
+    u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say + (b.media ? ` [média montré : ${b.media.type} ${b.media.title || ''} ${b.media.artist || ''}]` : '')).join(' ') }] }); u.history = u.history.slice(-20);
     for (const f of meta.memory) if (!u.memory.includes(f)) u.memory.push(f); u.memory = u.memory.slice(-40); save();
     const out = { topic: meta.topic, suggestions: meta.suggestions, teaser: meta.teaser, userId: id, streak: u.streak, visits: u.visits };
     send(stream ? { done: out } : { beats, ...out });
