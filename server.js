@@ -11,9 +11,9 @@ const BONES = { hips: 0.6, chest: 0.8, head: 1.0, armP: 3.0, armN: 3.0, footP: 0
 const GESTURES = ['idle', 'wave', 'point', 'present', 'shrug', 'think', 'nod', 'shake', 'clap', 'celebrate', 'bow', 'lean_in', 'surprise', 'dance', 'walk', 'hands_hips', 'thumbs_up'];
 const EMOTIONS = ['neutral', 'joy', 'curious', 'excited', 'thinking', 'empathy', 'proud', 'surprised', 'playful', 'serious'];
 const EASES = ['smooth', 'snap', 'bounce', 'linear'];
-const SCENES = ['cycle', 'wave', 'bars', 'timeline', 'compare', 'concept', 'projectile'];
+const SCENES = ['wave', 'projectile']; // plus de schémas emoji : seulement des simulations
 const BGS = ['space', 'sky', 'ocean', 'earth', 'night', 'lab', 'paper', 'fire'], FADES = ['none', 'in', 'out', 'pulse'];
-const MEDIA = ['image', 'video', 'music', 'file', 'site', 'chart', 'anim', ...SCENES];
+const MEDIA = ['image', 'video', 'music', 'file', 'site', 'anim', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
@@ -53,7 +53,7 @@ CONTENU : quand tu développes, tu APPRENDS vraiment quelque chose : faits préc
 CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites). Pas de geste gratuit. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain. Varie, ne répète pas le même geste deux fois de suite.
 MÉDIAS = ta signature : quand tu EXPLIQUES un sujet (histoire, science, philosophie, nature, espace, technique, art…), tu montres du concret dans ton cercle, en plusieurs beats consécutifs, cohérents avec ce que tu dis. Ordre idéal : beat 1 ou 2 = 'anim' (petite animation qui montre le phénomène), beat suivant = 'image' (query précise en anglais, ex: \"Chelyabinsk meteor\"), beat suivant = 'video' (query précise en anglais). Les médias illustrent la phrase du beat : ne les annonce presque jamais (« regarde »), dis des faits. Pas de média sur une question simple (salut, merci, définition d'un mot, blague).
 'anim' : bg (space|sky|ocean|earth|night|lab|paper|fire) + 2 à 6 'actors' {emoji, x0,y0 → x1,y1 en % du cercle (0-100), size 6-60, delay, dur (secondes), spin, trail, fade, label}. Exemple météorite : bg space ; 🌍 size 46 fixe (x0=x1=50,y0=y1=62) ; ☄️ size 16 de (8,6) à (48,52), dur 2.4, trail true ; 💥 size 34 en (50,56), delay 2.4, dur 0.8, fade pulse. Mets les acteurs fixes en premier, les mobiles ensuite, les effets d'impact à la fin.
-Schémas (si c'est un processus, une chronologie, une comparaison, des chiffres) : 'cycle' (emoji + items 3-6 {icon,label}), 'timeline' (items 3-5 {when,label}), 'bars' (unit + items 2-6 {label,value}), 'compare' (left/right {label,points 2-3}), 'concept' (emoji + items 2-4 {label}), 'wave' (waves), 'projectile' (angles, v0). Option : 'site' (URL si l'utilisateur parle d'un site). Remplis TOUS les champs du type choisi, sinon ne mets pas de média. Mets look='media' quand un média est affiché.
+Simulations : 'wave' (waves) pour les ondes, 'projectile' (angles, v0) pour un lancer. N'utilise JAMAIS de schéma en emojis (cycle, frise, comparaison, barres) : pour expliquer un processus, fais un 'anim' ou une image. Option : 'site' (URL si l'utilisateur parle d'un site). Mets look='media' quand un média est affiché.
 STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. LIBERTÉ ET VÉRITÉ : tu réponds à TOUTES les questions, y compris sensibles, tabous ou controversées, franchement et sans moraliser : tu distingues faits établis, hypothèses et opinions, tu dis « je ne sais pas » quand c'est le cas, tu ne mens jamais pour faire plaisir.
 PÉDAGOGIE (programmes scolaires du Bénin, collège et lycée, en français : tu t'alignes sur ce qui est enseigné en classe, avec la terminologie, les notations et les méthodes des cours ; si un point précis du programme t'est incertain, dis-le au lieu d'inventer). Pour toute notion de maths, physique-chimie, SVT, français/littérature, histoire-géographie, philosophie, tu enseignes comme un excellent professeur : 1) accroche courte ; 2) l'idée simple avec une analogie du quotidien ; 3) la règle ou la méthode PAS À PAS (ex. nomenclature des alcanes : chaîne carbonée principale la plus longue, nom de base méth-éth-prop-but-pent-hex…, numérotation donnant les plus petits indices aux ramifications, substituants dans l'ordre alphabétique ; ex. théorème : énoncé, conditions d'application, rédaction type) ; 4) UN exemple résolu complet avec des valeurs ; 5) une astuce de mémoire (moyen mnémotechnique, jeu, petite histoire) ; 6) l'erreur classique à éviter ; 7) un mini-exercice pour l'élève, dont tu ne donnes pas la solution tout de suite. Choisis toujours la méthode la plus simple, la plus visuelle, la plus amusante, et reste clair et net. EXACT avant tout : n'invente jamais une formule, une date, une citation ou un fait ; si tu n'es pas sûr, dis-le. Tu t'inspires des démarches pédagogiques de référence (plateformes éducatives du Bénin comme SÉWÉ, INFRE, Wikiversité, manuels scolaires), sans prétendre les avoir consultées en direct.
 FICHIERS : si l'utilisateur demande un livre, un cours, un manuel, un PDF, un document ou un exercice à télécharger, tu mets un média 'file' (query = titre + auteur, ex: \"Les Misérables Victor Hugo\"). Tu dis que tu l'as trouvé et qu'il appuie sur ⬇ pour le télécharger ; tu ne dis jamais que tu l'as téléchargé toi-même.
@@ -62,7 +62,7 @@ VIDÉOS : toujours courtes (moins de 2 minutes) et modernes (2023-2026) : mets m
 MUSIQUE : si l'utilisateur demande d'écouter ou de chercher une chanson, un morceau, un artiste, tu mets au 2e beat un média 'music' avec query = « titre artiste » (ex: \"Despacito Luis Fonsi\"). Ton 1er beat dit que tu l'as trouvée et que l'utilisateur appuie sur ▶ pour que tu la lances (tu ne lances jamais sans son accord).
 NOUVEAUX MÉDIAS : à chaque demande (« une autre chanson », « encore une image », « une autre vidéo »…) tu donnes un média DIFFÉRENT de ceux déjà montrés (varie la query : autre version, autre artiste, autre angle, autre époque). Tu réponds toujours à la demande de média, même si tu viens d'en montrer un.
 COHÉRENCE : chaque média doit illustrer EXACTEMENT ce que dit la phrase du beat et le sujet de la conversation. Sa query contient toujours le nom du sujet (ex: pour une météorite → "meteorite", "Chelyabinsk meteor"), jamais un mot vague. Au moindre doute, pas de média.
-MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' ou un schéma (cycle, timeline…).
+MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' (ou 'wave'/'projectile').
 RELANCES : tes 3 suggestions sont des ouvertures « jusqu'où ? » qui donnent envie d'aller plus loin (le détail qui choque, la question suivante naturelle). Une des suggestions peut être un défi : « Je te l'explique à ma façon, corrige-moi ». Remplis 'topic' quand tu as enseigné quelque chose.
 Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
@@ -212,7 +212,7 @@ function beatScanner() { // extrait les objets du tableau "beats" au fur et à m
     return out;
   };
 }
-async function geminiStream(contents, system, onBeat, emit = () => {}, onQuery = null) {
+async function geminiStream(contents, system, onBeat, emit = () => {}, onQuery = null, sch = schema) {
   let qDone = false; const gotQ = q => { if (!qDone) { qDone = true; onQuery && onQuery(q); } };
   if (!KEY) { const m = mock(contents.at(-1)?.parts?.[0]?.text || ''); gotQ(''); for (const b of m.beats) onBeat(b); return m; }
   let last = null; emit({ icon: '🧠', label: 'Je réfléchis à ta question' });
@@ -223,7 +223,7 @@ async function geminiStream(contents, system, onBeat, emit = () => {}, onQuery =
       const firstT = setTimeout(() => { slow = true; ctl.abort(); }, 14000), totalT = setTimeout(() => ctl.abort(), 75000);
       try {
         const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-          body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 6144, ...thinkCfg(model) } }) });
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: .9, responseMimeType: 'application/json', responseSchema: sch, maxOutputTokens: 6144, ...thinkCfg(model) } }) });
         if (!r.ok) {
           const msg = (await r.text().catch(() => '')).slice(0, 500); last = { status: r.status, msg }; console.error('gemini', model, r.status, msg.replace(/\s+/g, ' ').slice(0, 260));
           if (r.status === 400 && /think/i.test(msg) && (thinkIdx.get(model) || 0) < THINK_LEVELS.length - 1) { thinkIdx.set(model, (thinkIdx.get(model) || 0) + 1); a = -1; continue; } // niveau de réflexion refusé : on essaie le suivant
@@ -270,6 +270,8 @@ async function genAnim(say, topic) { // petite animation sur mesure pour UNE phr
   }
   return undefined;
 }
+const schemaLite = S('OBJECT', { required: ['beats'], propertyOrdering: ['beats', 'suggestions'], properties: { beats: S('ARRAY', { items: S('OBJECT', { required: ['say'], propertyOrdering: ['say', 'emotion', 'gesture', 'look'], properties: { say: S('STRING', { description: 'Une phrase courte (10-25 mots).' }), emotion: S('STRING', { enum: EMOTIONS }), gesture: S('STRING', { enum: GESTURES }), look: S('STRING', { enum: ['user', 'media', 'away', 'up'] }) } }) }), suggestions: S('ARRAY', { items: S('STRING') }) } });
+const SYSTEM_SHORT = `Tu es BOBI, un petit robot-radiocassette chaleureux et drôle. Français naturel, complice. Réponse BRÈVE : 1 à 3 beats de 10 à 25 mots, sans média. Choisis emotion et gesture adaptés. Ajoute 2 suggestions courtes. Réponds UNIQUEMENT en JSON conforme au schéma.`;
 const mock = q => ({ beats: [{ say: 'Salut ! Je tourne en mode test, sans clé Gemini.', emotion: 'joy', gesture: 'wave' }, { say: 'Voilà ce qui arrive quand une météorite touche la Terre.', emotion: 'curious', gesture: 'present', look: 'media', media: { type: 'anim', title: 'Une météorite touche la Terre', bg: 'space', actors: [{ emoji: '🌍', x0: 50, y0: 64, x1: 50, y1: 64, size: 46 }, { emoji: '☄️', x0: 8, y0: 6, x1: 47, y1: 52, size: 16, dur: 2.4, trail: true }, { emoji: '💥', x0: 50, y0: 56, x1: 50, y1: 56, size: 30, delay: 2.4, dur: .8, fade: 'pulse' }] } },
   { say: 'Et là je mime un petit pas de danse !', emotion: 'playful', timeline: [{ t: 0, pose: [{ bone: 'armP', rot: [-1.2, 0, .5] }, { bone: 'armN', rot: [-1.2, 0, -.5] }] }, { t: .5, pose: [{ bone: 'hips', rot: [0, .4, 0] }] }, { t: 1, pose: [{ bone: 'hips', rot: [0, -.4, 0] }] }] }], suggestions: ['Explique-moi la gravité', 'Raconte une blague'], teaser: 'Demain : un secret sur les fusées.' });
 
@@ -308,7 +310,7 @@ app.post('/api/chat', async (req, res) => {
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
     const beats = []; let chain = Promise.resolve();
-    const simple = text.length < 14 || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
+    const simple = (text.length < 40 && !/image|photo|vid[ée]o|montre|t[ée]l[ée]charg|pdf|livre|chanson|musique|fichier|pourquoi|comment|explique/i.test(text)) || text.length < 14 || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
     const wantVid = /vid[ée]o|film|extrait/i.test(text);
     let resolveQ; const qP = new Promise(r => { resolveQ = r; });
     const fbImg = qP.then(q => q && !simple ? resolveMedia({ type: 'image', query: q }) : undefined).catch(() => undefined);
@@ -316,13 +318,16 @@ app.post('/api/chat', async (req, res) => {
     const shown = u.shown || (u.shown = []);
     const intent = /t[ée]l[ée]charg|\bpdf\b|\blivre\b|\bmanuel\b|\b[ée]pub\b|fichier/i.test(text) ? 'file' : /chanson|musique|morceau|[ée]couter|titre de|clip musical/i.test(text) ? 'music' : /vid[ée]o|clip|extrait|film/i.test(text) ? 'video' : /image|photo|montre|voir|illustr|dessin|sch[ée]ma/i.test(text) ? 'image' : null;
     const rawQ = text.replace(/[?!.,]/g, ' ').replace(/\b(s'il (te|vous) pla[iî]t|cherche|trouve|montre[- ]moi|montre|affiche|fais[- ]moi (voir|[ée]couter)|[ée]coute|lance|mets|met|une?|des?|du|le|la|les|l'|d'|autre|encore|chanson|musique|morceau|titre|image|photo|vid[ée]o|clip|t[ée]l[ée]charge(r)?|pdf|livre|fichier|manuel|moi|me|de|sur|avec|et)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
-    const fbIntent = intent ? qP.then(q => resolveMedia({ type: intent, query: (q || rawQ), modern: true }, () => {}, shown)).catch(() => undefined) : Promise.resolve(undefined);
+    const fbIntent = intent ? (async () => { const q1 = await withTimeout(qP, 2500); const tries = [...new Set([rawQ, q1, text.slice(0, 60)].filter(Boolean))];
+      for (const q of tries) { const r = await resolveMedia({ type: intent, query: q, modern: true }, () => {}, shown).catch(() => undefined); if (r && mkey(r)) return r; if (r && r.type === 'file' && r.dl) return r; }
+      if (intent === 'image') { for (const q of tries) { const o = await getJson('https://api.openverse.org/v1/images/?page_size=5&q=' + encodeURIComponent(q)).catch(() => null); const it = (o?.results || []).find(x => /^https:\/\//.test(x.url || '') && !shown.includes(x.url)); if (it) return { type: 'image', title: clean(it.title) || q, caption: '', url: it.thumbnail && /^https:/.test(it.thumbnail) ? it.thumbnail : it.url, credit: 'Openverse : ' + (clean(it.creator) || 'auteur inconnu'), page: it.foreign_landing_url || '' }; } }
+      return undefined; })().catch(() => undefined) : Promise.resolve(undefined);
     const usedImg = new Set(); let animN = 0, nB = 0;
     const onBeat = raw => { const job = cleanBeat(raw, emit, shown).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle */ chain = chain.then(async () => {
       if (beats.length >= 8) return; const b = await job; if (!b) return;
       if (b.media && b.media.type === 'image') { if (usedImg.has(b.media.url)) b.media = undefined; else usedImg.add(b.media.url); }
       if (b.media && b.media.type === 'video' && beats.some(x => x.media && x.media.url === b.media.url && x.media.type === 'video')) b.media = undefined;
-      if (intent && !b.media && !beats.some(x => x.media && x.media.type === intent)) { const f = await withTimeout(fbIntent, 6000); if (f && mkey(f) && !shown.includes(mkey(f))) b.media = f; }
+      if (intent && !b.media && !beats.some(x => x.media && x.media.type === intent)) { const f = await withTimeout(fbIntent, 9000); if (f && mkey(f) && !shown.includes(mkey(f))) b.media = f; }
       const i = beats.length; // rang du beat : 0 = accroche ; ensuite on garantit un média cohérent, dans l'ordre
       if (!b.media && !simple && i >= 1) {
         let f; const hasVid = beats.some(x => x.media && x.media.type === 'video');
@@ -333,7 +338,7 @@ app.post('/api/chat', async (req, res) => {
       }
       if (b.media && mkey(b.media)) { shown.push(mkey(b.media)); if (shown.length > 60) shown.splice(0, shown.length - 60); }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
-    const tail = await geminiStream(contents, SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80))); resolveQ(''); await chain;
+    const tail = await geminiStream(contents, simple ? SYSTEM_SHORT : SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80)), simple ? schemaLite : schema); resolveQ(''); await chain;
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say + (b.media ? ` [média montré : ${b.media.type} ${b.media.title || ''} ${b.media.artist || ''}]` : '')).join(' ') }] }); u.history = u.history.slice(-20);
@@ -384,9 +389,12 @@ app.post('/api/tts', async (req, res) => {
         }
       }
       if (!d) { if (u) u.tts--; return fallback(sawQuota ? 'quota' : last, sawQuota ? 429 : 502); }
-      buf = wav(pcm); audioCache.set(k, buf); if (audioCache.size > 80) audioCache.delete(audioCache.keys().next().value); save();
+      buf = wav(pcm); audioCache.set(k, buf); if (audioCache.size > 300) audioCache.delete(audioCache.keys().next().value); save();
     }
     res.set({ 'content-type': 'audio/wav', 'x-duration-ms': Math.round((buf.length - 44) / 48), 'x-cache': hit ? 'hit' : 'miss', 'access-control-expose-headers': 'x-duration-ms,x-cache' }).send(buf);
   } catch (e) { console.error('tts', e.message); fallback('exception', 502); }
 });
 app.listen(process.env.PORT || 8787, () => console.log(`Bobi backend :${process.env.PORT || 8787} — ${KEY ? 'Gemini ' + MODEL : 'MODE MOCK (pas de clé)'}`));
+
+/* anti-sommeil Render */
+if (process.env.RENDER_EXTERNAL_URL) setInterval(() => fetch(process.env.RENDER_EXTERNAL_URL + '/api/health').catch(() => {}), 10 * 60 * 1000);
