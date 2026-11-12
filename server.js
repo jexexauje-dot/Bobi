@@ -325,11 +325,12 @@ app.post('/api/chat', async (req, res) => {
     const usedImg = new Set(); let animN = 0, nB = 0;
     const onBeat = raw => { const job = cleanBeat(raw, emit, shown).catch(() => null); /* la recherche de média démarre tout de suite, en parallèle */ chain = chain.then(async () => {
       if (beats.length >= 8) return; const b = await job; if (!b) return;
+      if (intent === 'file' && b.media && b.media.type !== 'file') b.media = undefined;
       if (b.media && b.media.type === 'image') { if (usedImg.has(b.media.url)) b.media = undefined; else usedImg.add(b.media.url); }
       if (b.media && b.media.type === 'video' && beats.some(x => x.media && x.media.url === b.media.url && x.media.type === 'video')) b.media = undefined;
-      if (intent && !b.media && !beats.some(x => x.media && x.media.type === intent)) { const f = await withTimeout(fbIntent, 9000); if (f && mkey(f) && !shown.includes(mkey(f))) b.media = f; }
+      if (intent === 'file' && (!b.media || b.media.type !== 'file') && !beats.some(x => x.media && x.media.type === 'file')) { const f = await withTimeout(fbIntent, 9000); b.media = f && f.dl ? f : undefined; } else if (intent && !b.media && !beats.some(x => x.media && x.media.type === intent)) { const f = await withTimeout(fbIntent, 9000); if (f && mkey(f) && !shown.includes(mkey(f))) b.media = f; }
       const i = beats.length; // rang du beat : 0 = accroche ; ensuite on garantit un média cohérent, dans l'ordre
-      if (!b.media && !simple && i >= 1) {
+      if (!b.media && !simple && i >= 1 && intent !== 'file') {
         let f; const hasVid = beats.some(x => x.media && x.media.type === 'video');
         if (i === 1) { const im = await withTimeout(fbImg, 3500); if (im && im.url && !usedImg.has(im.url)) { f = im; usedImg.add(im.url); } }
         else if (i === 2 && !hasVid) { const v = await withTimeout(fbVid, 3500); if (v && (v.file || v.embed)) f = v; }
