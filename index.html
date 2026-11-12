@@ -399,6 +399,10 @@ body.in-chat{overflow:hidden}
 .orbm.wide .cap{left:10px;top:10px;bottom:auto;transform:none;max-width:55%;text-align:left}
 .orbm.wide .octl{top:8px;right:8px;left:auto;transform:none}
 @media (max-width:899px){.cstage.explain .orbm.wide{height:92%;width:auto}}
+
+.fcard{position:absolute;inset:0;background:linear-gradient(160deg,#1c2d78,#0b1020)}
+.fcard .fic{position:absolute;left:50%;top:24%;transform:translateX(-50%);font-size:64px}
+.orbm .fdl{top:62%;text-decoration:none;color:#fff}
 </style>
 
 <main class="wrap" id="top">
@@ -855,6 +859,7 @@ const adaptMedia = m => {
   if (SCENES[m.type]) return m;
   if (m.type === 'chart' && m.chart && Array.isArray(m.chart.labels)) return { type: 'bars', title: m.title, caption: m.caption, items: m.chart.labels.map((l, i) => ({ label: l, value: m.chart.values[i] })) };
   if (m.type === 'image' && m.url) return { type: 'image', title: m.title, caption: m.caption, url: m.url, credit: m.credit, page: m.page };
+  if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) return { type: 'file', title: m.title, author: m.author, format: m.format, dl: m.dl, page: m.page, credit: m.credit };
   if (m.type === 'music' && (m.audio || m.embed)) return { type: 'music', title: m.title, artist: m.artist, cover: m.cover, audio: m.audio, embed: m.embed, page: m.page, credit: m.credit };
   if (m.type === 'video' && (m.embed || m.file)) return { type: 'video', title: m.title, caption: m.caption, embed: m.embed, file: m.file, mime: m.mime, poster: m.poster, credit: m.credit, page: m.page };
   if (m.type === 'anim' && Array.isArray(m.actors) && m.actors.length) return { type: 'anim', title: m.title, bg: m.bg, actors: m.actors };
@@ -961,16 +966,16 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   let voice = null, voiceMale = false, voiceNat = false;
   function pickVoice() {
     if (!TTS) return; const vs = TTS.getVoices().filter(v => /^fr/i.test(v.lang)); if (!vs.length) return;
-    const FEM = /am[ée]lie|marie|audrey|denise|[ée]loise|julie|hortense|female|femme|aur[ée]lie|c[ée]line|virginie|lea|léa|sylvie|claire|jolie/i, MALE = /thomas|paul|henri|daniel|claude|antoine|nicolas|male|homme|bernard|guillaume|remy|rémy|mathieu|alain|gérard|gerard|jérôme|jerome|fabrice|maurice|thierry|jacques|jean|luc|hugo|lucas|yannick/i;
-    const score = v => (/natural|neural|multilingual/i.test(v.name) ? 40 : 0) + (/online/i.test(v.name) ? 15 : 0) + (/google/i.test(v.name) ? 14 : 0) - (/^Microsoft/i.test(v.name) && !/online|natural/i.test(v.name) ? 10 : 0) + (MALE.test(v.name) ? 6 : 0) - (FEM.test(v.name) ? 3 : 0) + (/fr[-_]fr/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 4 : 0);
-    const best = vs.sort((a, b) => score(b) - score(a))[0]; let saved = null; try { saved = vs.find(v => v.voiceURI === localStorage.bobiVoiceURI); localStorage.bobiVoiceURI = (saved || best).voiceURI; } catch (e) { } voice = saved || best; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name); voiceNat = /natural|neural|online|google/i.test(voice.name);
+    const FEM = /am[ée]lie|marie|audrey|denise|[ée]loise|julie|hortense|female|femme|aur[ée]lie|c[ée]line|virginie|lea|léa|sylvie|claire|jolie|x-fr[ac]\b|fr[ac]-(local|network)|google fran/i, MALE = /thomas|paul|henri|daniel|claude|antoine|nicolas|male|homme|bernard|guillaume|remy|rémy|mathieu|alain|gérard|gerard|jérôme|jerome|fabrice|maurice|thierry|jacques|jean|luc|hugo|lucas|yannick|x-fr[bd]\b|fr[bd]-(local|network)|rocko|reed|aaron|gabriel|mehdi|youssef/i;
+    const score = v => (/natural|neural|multilingual/i.test(v.name) ? 40 : 0) + (/online/i.test(v.name) ? 15 : 0) + (/google/i.test(v.name) ? 14 : 0) - (/^Microsoft/i.test(v.name) && !/online|natural/i.test(v.name) ? 10 : 0) + (MALE.test(v.name) ? 80 : 0) - (FEM.test(v.name) ? 80 : 0) + (/fr[-_]fr/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 4 : 0);
+    const best = vs.sort((a, b) => score(b) - score(a))[0]; let saved = null; try { saved = vs.find(v => v.voiceURI === localStorage.bobiVoiceURI2); localStorage.bobiVoiceURI2 = (saved || best).voiceURI; } catch (e) { } voice = saved || best; voiceMale = MALE.test(voice.name) && !FEM.test(voice.name); voiceNat = /natural|neural|online|google/i.test(voice.name);
   }
   if (TTS) { pickVoice(); TTS.addEventListener && TTS.addEventListener('voiceschanged', pickVoice); }
   const voiceOn = () => !!(TTS && voice && soundOn && ac);
   function startTTS(text, words, offs) {
     const o = { bCount: 0, onWord: null, ended: false }; o.started = new Promise(r => { o._st = r; });
     const _u0 = null, u = new SpeechSynthesisUtterance(text);
-    u.lang = voice.lang; u.voice = voice; u.rate = voiceNat ? 1 : voiceMale ? .98 : .94; u.pitch = voiceNat ? 1 : voiceMale ? .92 : .8; u.volume = 1;
+    u.lang = voice.lang; u.voice = voice; u.rate = voiceMale ? 1.03 : 1; u.pitch = voiceMale ? 1.06 : .72; u.volume = 1;
     o.done = new Promise(res => {
       u.onstart = () => o._st(); u.onend = u.onerror = () => { o.ended = true; o._st(); res(); };
       u.onboundary = e => { if (e.name && e.name !== 'word') return; o.bCount++; let k = 0; while (k + 1 < offs.length && offs[k + 1] <= e.charIndex) k++; if (o.onWord) o.onWord(k); };
@@ -1040,7 +1045,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   /* ---------- cercle média : Bobi se réduit à 1/7 et montre animation / image / vidéo ---------- */
   let orbEl = null, orbTimer = 0, orbAnims = [];
-  const ORB_TYPES = ['image', 'video', 'anim', 'music'];
+  const ORB_TYPES = ['image', 'video', 'anim', 'music', 'file'];
   let orbAudio = null, bigOn = false;
   function ensureOrb() { if (orbEl) return orbEl; orbEl = document.createElement('div'); orbEl.className = 'orbm'; orbEl.addEventListener('click', e => { if (e.target.closest('.obtn,video,iframe')) return; toggleBig(); }); cstage.appendChild(orbEl); return orbEl; }
   function stopAnims() { orbAnims.forEach(a => { try { a.cancel(); } catch (e) { } }); orbAnims = []; }
@@ -1084,6 +1089,12 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     else if (m.type === 'video' && /^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.appendChild(ytFrame(m.embed + '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1', S(m.title, 80))); cap(m.title); ok = true; }
     else if (m.type === 'video' && /^https:\/\//.test(m.file || '')) { const v = document.createElement('video'); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.controls = true; if (/^https:\/\//.test(m.poster || '')) v.poster = m.poster; v.onerror = () => { if (o.contains(v)) hideOrb(); }; v.src = m.file; o.appendChild(v); const pb = document.createElement('button'); pb.type = 'button'; pb.className = 'obtn mplay'; pb.textContent = '▶'; pb.setAttribute('aria-label', 'Lire la vidéo'); pb.hidden = true; v.addEventListener('play', () => { pb.hidden = true; }); v.addEventListener('pause', () => { pb.hidden = false; }); pb.addEventListener('click', e => { e.stopPropagation(); v.muted = bigOn ? false : v.muted; v.play().catch(() => { }); }); o.appendChild(pb); const pr = v.play(); if (pr && pr.catch) pr.catch(() => { pb.hidden = false; }); cap(m.credit ? 'Vidéo : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'anim') { const d = document.createElement('div'); o.appendChild(d); cstage.classList.add('explain'); renderAnim(d, m); cap(m.title); ok = true; }
+    else if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) {
+      const fc = document.createElement('div'); fc.className = 'fcard'; const ic = document.createElement('div'); ic.className = 'fic'; ic.textContent = '📄'; fc.appendChild(ic); o.appendChild(fc);
+      const a = document.createElement('a'); a.className = 'obtn mplay fdl'; a.href = m.dl; a.setAttribute('download', ''); a.textContent = '⬇'; a.setAttribute('aria-label', 'Télécharger ' + S(m.title, 60));
+      a.addEventListener('click', e => { e.stopPropagation(); try { const lib = JSON.parse(localStorage.bobiLib || '[]'); lib.push({ title: S(m.title, 90), format: m.format, t: Date.now() }); localStorage.bobiLib = JSON.stringify(lib.slice(-100)); } catch (x) { } });
+      o.appendChild(a); cap([m.title, m.author, m.format].filter(Boolean).join(' · ') + (m.credit ? ' (' + m.credit + ')' : '')); ok = true;
+    }
     else if (m.type === 'music') {
       const cv = new Image(); cv.alt = S(m.title, 80); cv.referrerPolicy = 'no-referrer'; if (/^https:\/\//.test(m.cover || '')) cv.src = m.cover; else cv.style.background = '#1b1b2a'; o.appendChild(cv); o.dataset.music = '1';
       const b = document.createElement('button'); b.type = 'button'; b.className = 'obtn mplay'; b.textContent = '▶'; b.setAttribute('aria-label', 'Lancer la musique');
