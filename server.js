@@ -95,18 +95,28 @@ const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'phot
 const relevant = (title, q, strict) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return strict ? hit >= (ks.length <= 2 ? ks.length : Math.ceil(ks.length * .8)) : ks.length < 3 ? hit >= 1 : hit >= Math.ceil(ks.length * .5); };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 const mkey = m => m && (m.url || m.file || m.embed || m.audio || '');
+const SIMLIB = fs.readFileSync(new URL('./simlib.js', import.meta.url), 'utf8'), SIMEX = fs.readFileSync(new URL('./simexamples.txt', import.meta.url), 'utf8');
 async function genSim(title, desc) { // Gemini écrit une vraie simulation interactive (HTML autonome) sur mesure pour le sujet
   if (!KEY) return undefined;
-  const SYS = `Tu es un développeur-pédagogue. Tu écris UNE simulation interactive en HTML/CSS/JS pur, autonome (aucune ressource externe, aucun fetch), qui explique EXACTEMENT le sujet demandé, en français. Règles : fond sombre (#14161a), texte clair, police system-ui, largeur 100% (responsive, ~340px de haut utile), boutons tactiles grands. Dessine les VRAIS objets du sujet (molécule = atomes colorés reliés par des liaisons avec symboles ; équation = lignes de texte transformées étape par étape ; forces = flèches ; cellule, circuit, courbe, frise… selon le sujet) avec canvas ou SVG ou DOM. Pour une méthode (nomenclature, résolution, démonstration, protocole) : étapes numérotées avec boutons « Précédent / Suivant », une phrase d'explication par étape, l'élément concerné mis en surbrillance, et un exemple concret complet traité de bout en bout ; ajoute un bouton « Autre exemple » si pertinent. Pour un phénomène : curseurs/boutons pour changer les paramètres et voir l'effet en temps réel, avec légende et valeurs affichées. Jamais de boules qui bougent au hasard : chaque mouvement doit avoir un sens physique ou pédagogique. Réponds UNIQUEMENT avec le code HTML complet (<!doctype html>…), sans explication ni balises markdown. Maximum 9000 caractères.`;
+  const SYS = `Tu es un développeur-pédagogue d'élite. Tu écris une simulation interactive qui explique EXACTEMENT le sujet demandé, en français, fidèle à ce que l'utilisateur veut voir.
+MÉTHODE (obligatoire, réfléchis avant de coder) : 1) liste tout ce que la demande nomme (objets, forces, étapes, éléments) : TOUS doivent être dessinés et étiquetés, rien d'inventé ; 2) vérifie la justesse scientifique (directions, sens, formules, valeurs : ex. poids vertical vers le bas, réaction normale perpendiculaire à la surface, frottement opposé au mouvement) ; 3) choisis la forme : MÉTHODE/PROCÉDURE → Sim.steps (une étape = une idée, l'élément concerné surligné, exemple concret traité de bout en bout) ; PHÉNOMÈNE/PHYSIQUE → Sim.stage animé avec Sim.slider pour les paramètres et valeurs affichées ; STRUCTURE → schéma étiqueté avec légende. Jamais de formes décoratives ni de mouvements sans signification.
+FORMAT : tu écris UNIQUEMENT du code : un ou plusieurs blocs <script> (et au besoin un peu de <style>), SANS <html>, <head>, <body>. La bibliothèque globale Sim est DÉJÀ chargée (n'en redéfinis pas) :
+Sim.stage((ctx,W,H,dt)=>{...},{height}) boucle d'animation sur canvas responsive (redessine tout à chaque image ; dt en secondes) ;
+Sim.text(ctx,str,x,y,{size,color,align,bold}) ; Sim.arrow(ctx,x,y,dx,dy,color,label,{dash,w}) flèche de vecteur (dx,dy) en pixels ; Sim.ball(ctx,x,y,r,color) ; Sim.incline(ctx,x0,yBas,longueur,angleDeg) dessine le plan et renvoie {len,top,u(haut du plan),d(bas),n(normale sortante),pos(s,décalage)} ;
+Sim.atom(ctx,x,y,symbole,couleur,r) ; Sim.bond(ctx,x1,y1,x2,y2,ordre) (liaison simple/double/triple) ; Sim.slider(label,min,max,val,pas,callback,unité) ; Sim.button(label,fn) ; Sim.say(html) texte explicatif sous le dessin ; Sim.steps([{t:titre,d:explication html}],onChange) → {i,go} boutons Précédent/Suivant.
+Tu peux dessiner aussi directement avec le contexte canvas 2D (courbes, axes, cellule, circuit…). Hauteur utile 260-340 px, largeur variable (utilise W et H, jamais de pixels fixes pour les positions). Pas de ressource externe, pas de fetch. Maximum 7000 caractères de code.
+Voici deux exemples de la qualité attendue (adapte-toi au sujet, ne les recopie pas) :
+` + SIMEX;
   for (const model of MODELS.slice(0, 3)) {
     if ((blocked.get(model) || 0) > Date.now()) continue;
     try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(26000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: [{ text: `Sujet : ${title}\nSimulation à construire : ${desc}` }] }], generationConfig: { temperature: .5, maxOutputTokens: 9000, ...thinkCfg(model) } }) });
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(40000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: [{ text: `Sujet : ${title}\nSimulation à construire : ${desc}` }] }], generationConfig: { temperature: .5, maxOutputTokens: 12000, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 1500 } } : thinkCfg(model)) } }) });
       if (!r.ok) { if (r.status === 429 || r.status === 404) blocked.set(model, Date.now() + 6e4); continue; }
       const j = await r.json(); let h = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
       const i = h.search(/<!doctype|<html|<body|<div|<canvas|<svg/i); if (i > 0) h = h.slice(i);
-      if (h.length > 400 && h.length < 60000 && /<script/i.test(h) && !/fetch\(|XMLHttpRequest|WebSocket|src=["']?https?:|<link|<iframe|document\.cookie|localStorage|window\.(top|parent)|location\s*[.=]/i.test(h)) return h;
+      h = h.replace(/<!doctype[^>]*>|<\/?(html|head|body)[^>]*>|<meta[^>]*>|<title>[\s\S]*?<\/title>/gi, '');
+      if (h.length > 300 && h.length < 40000 && /<script/i.test(h) && !/fetch\(|XMLHttpRequest|WebSocket|src=["']?https?:|<link|<iframe|document\.cookie|localStorage|window\.(top|parent)|location\s*[.=]/i.test(h)) return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>' + SIMLIB + '</script>' + h + '</body></html>';
     } catch { }
   }
   return undefined;
@@ -203,7 +213,7 @@ async function cleanBeat(b, emit = () => {}, skip = []) {
   if (!b || !b.say) return null;
   const out = { say: String(b.say).slice(0, 420), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
     gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' };
-  const m = await withTimeout(resolveMedia(b.media, emit, skip).catch(() => undefined), b.media?.type === 'sim' ? 30000 : 4500); if (m) out.media = m;
+  const m = await withTimeout(resolveMedia(b.media, emit, skip).catch(() => undefined), b.media?.type === 'sim' ? 45000 : 4500); if (m) out.media = m;
   if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée' });
   else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
   return out;

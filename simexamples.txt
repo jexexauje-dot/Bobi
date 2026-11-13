@@ -1,0 +1,37 @@
+EXEMPLE 1 (référence de qualité, forces sur une bille sur un plan incliné) :
+<script>
+let ang=30,mu=.2,s=0,v=0;
+Sim.slider('Angle',0,60,30,1,a=>{ang=a;s=0;v=0},'°');
+Sim.slider('Frottement μ',0,1,.2,.05,m=>{mu=m;s=0;v=0});
+Sim.button('↻ Relancer',()=>{s=0;v=0});
+Sim.say('<b>Forces sur la bille (m = 1 kg, g = 9,8)</b><br>Poids <b style="color:#ff5d5d">P</b> vertical vers le bas, réaction <b style="color:#4cd964">N</b> perpendiculaire au plan, frottement <b style="color:#ffa63d">f</b> le long du plan, opposé au mouvement, et la somme <b style="color:#b388ff">ΣF</b>.');
+Sim.stage((x,W,H,dt)=>{
+ const inc=Sim.incline(x,W*.1,H-28,W*.78,ang),t=ang*Math.PI/180,g=9.8,k=7,r=15;
+ const tmax=inc.len-r*2,sl=g*Math.sin(t),Nn=g*Math.cos(t),moving=mu*Nn<sl-1e-6||v>0&&s<tmax;
+ const a=mu*Nn<sl?sl-mu*Nn:0; if(a>0){v+=a*dt*18;s+=v*dt*18; if(s>tmax){s=0;v=0}} else {v=0}
+ const c=inc.pos(s+r+4,r),px=c[0],py=c[1];Sim.ball(x,px,py,r,'#4aa3ff');
+ const fN=Nn*k,fP=g*k,ff=(a>0?mu*Nn:sl)*k;
+ Sim.arrow(x,px,py,0,fP,'#ff5d5d','P = mg');
+ Sim.arrow(x,px,py,inc.n[0]*fN,inc.n[1]*fN,'#4cd964','N');
+ if(ff>1)Sim.arrow(x,px,py,inc.u[0]*ff,inc.u[1]*ff,'#ffa63d','f');
+ const Rx=inc.n[0]*fN+inc.u[0]*ff,Ry=fP+inc.n[1]*fN+inc.u[1]*ff;
+ if(a>0)Sim.arrow(x,px+0,py,Rx,Ry,'#b388ff','ΣF',{dash:1}); else Sim.text(x,'ΣF = 0 : la bille reste immobile',W/2,22,{color:'#b388ff',bold:1});
+ Sim.text(x,'f max = μN = '+(mu*Nn).toFixed(1)+' N  ·  P∥ = '+sl.toFixed(1)+' N',W/2,H-8,{size:12,color:'#9aa0aa'});
+},{height:320});
+</script>
+
+EXEMPLE 2 (référence, nomenclature pas à pas, molécule CH3-CH2-CH2-OH) :
+<script>
+const at=[{s:'C',x:.22,y:.55,c:'#555'},{s:'C',x:.42,y:.4,c:'#555'},{s:'C',x:.62,y:.55,c:'#555'},{s:'O',x:.82,y:.4,c:'#e53935'},{s:'H',x:.94,y:.52,c:'#bbbbbb'}],bd=[[0,1],[1,2],[2,3],[3,4]];
+const st=Sim.steps([
+ {t:'Repérer la chaîne carbonée',d:'On compte les C de la plus longue chaîne : <b>3 C → « propan- »</b>.'},
+ {t:'Trouver le groupe caractéristique',d:'Un O lié à un H en bout de chaîne : c’est un <b>hydroxyle –OH</b> → famille des <b>alcools</b>, suffixe <b>« -ol »</b>.'},
+ {t:'Numéroter la chaîne',d:'On numérote pour que le C portant –OH ait le plus petit numéro : le –OH est sur le <b>C n°1</b> (en partant de la droite).'},
+ {t:'Écrire le nom',d:'propan + 1 + ol = <b>propan-1-ol</b>. Essaie avec un autre exemple !'}]);
+Sim.stage((x,W,H)=>{const P=a=>[a.x*W,a.y*H*.9+10],i=st.i;
+ bd.forEach(([a,b])=>{const A=P(at[a]),B=P(at[b]);Sim.bond(x,A[0],A[1],B[0],B[1],1,(i==0&&b<3)||(i>=1&&a>=2)?'#e8a317':'#cfd3da')});
+ at.forEach((a,j)=>{const p=P(a);if((i==0&&j<3)||(i>=1&&j>=3)){x.save();x.strokeStyle='#e8a317';x.lineWidth=3;x.beginPath();x.arc(p[0],p[1],24,0,7);x.stroke();x.restore()}Sim.atom(x,p[0],p[1],a.s,a.c,17)});
+ if(i>=2)[2,1,0].forEach((j,n)=>{const p=P(at[j]);Sim.text(x,String(n+1),p[0],p[1]-34,{color:'#e8a317',bold:1,size:18})});
+ if(i==3)Sim.text(x,'propan-1-ol',W/2,H-24,{size:24,bold:1,color:'#e8a317'});
+},{height:260});
+</script>
