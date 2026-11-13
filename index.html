@@ -22,7 +22,7 @@
 .thinkrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:6px 0 14px}.thinkrow .dots{padding:0}
 .tlabel{font-family:var(--mono);font-size:12.5px;color:var(--mute)}.tlabel b{color:var(--accent);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
 @media (prefers-reduced-motion:reduce){.tfx .orb,.tfx .cr,.tfx .ti,.cstage.thinking::before,.cstage.talking::before,.cstage.thinking::after{animation:none}#c3d,.flat{transition:none}}
-</style><style>.filec{display:flex;align-items:center;gap:14px;margin:10px 0;padding:14px 16px;border-radius:18px;background:#1c1c1c;color:#f2f2f2;text-decoration:none;max-width:420px;cursor:pointer}.filec:active{background:#262626}.filec .fi{flex:none;width:48px;height:48px;border-radius:12px;background:#2b2b2b;display:grid;place-items:center;font-size:20px;color:#aaa;font-family:monospace}.filec .ft{flex:1;min-width:0;display:flex;flex-direction:column}.filec b{font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.filec i{font-style:normal;font-size:14px;color:#9a9a9a}.filec .fd{flex:none;font-size:20px;color:#e8a317}</style></head><body>
+</style><style>.filec{display:flex;align-items:center;gap:14px;margin:10px 0;padding:14px 16px;border-radius:18px;background:#1c1c1c;color:#f2f2f2;text-decoration:none;max-width:420px;cursor:pointer}.filec:active{background:#262626}.filec .fi{flex:none;width:48px;height:48px;border-radius:12px;background:#2b2b2b;display:grid;place-items:center;font-size:20px;color:#aaa;font-family:monospace}.filec .ft{flex:1;min-width:0;display:flex;flex-direction:column}.filec b{font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.filec i{font-style:normal;font-size:14px;color:#9a9a9a}.filec .fd{flex:none;font-size:20px;color:#e8a317}</style><style>.simc{margin:10px 0;border-radius:18px;overflow:hidden;background:#14161a;color:#f2f2f2;max-width:520px;border:1px solid #2a2d33}.simc .sh{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1c1f24;font-size:14px}.simc .st1{color:#e8a317;font-weight:700;white-space:nowrap}.simc b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.simc .sr{border:0;background:#2b2e34;color:#fff;border-radius:10px;width:34px;height:34px;font-size:18px;cursor:pointer}.simc iframe{display:block;width:100%;height:380px;border:0;background:#14161a}</style></head><body>
 <title>Bobi</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -862,7 +862,7 @@ const adaptMedia = m => {
   if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) return { type: 'file', title: m.title, author: m.author, format: m.format, dl: m.dl, page: m.page, credit: m.credit };
   if (m.type === 'music' && (m.audio || m.embed)) return { type: 'music', title: m.title, artist: m.artist, cover: m.cover, audio: m.audio, embed: m.embed, page: m.page, credit: m.credit };
   if (m.type === 'video' && (m.embed || m.file)) return { type: 'video', title: m.title, caption: m.caption, embed: m.embed, file: m.file, mime: m.mime, poster: m.poster, credit: m.credit, page: m.page };
-  if (m.type === 'anim' && Array.isArray(m.actors) && m.actors.length) return { type: 'anim', title: m.title, bg: m.bg, actors: m.actors };
+  if (m.type === 'sim' && typeof m.html === 'string' && m.html.length > 300) return { type: 'sim', title: m.title, html: m.html };
   if (m.type === 'video' && (m.embed || m.search)) return { type: 'link', kind: 'Vidéo', title: m.title, caption: m.caption, url: m.search || m.embed, label: 'Voir la vidéo' };
   if (m.type === 'site' && m.url) return { type: 'link', kind: 'Site', title: m.title || m.domain, caption: m.caption, url: m.url, label: 'Ouvrir ' + (m.domain || 'le site') };
   return null;
@@ -1045,7 +1045,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
 
   /* ---------- cercle média : Bobi se réduit à 1/7 et montre animation / image / vidéo ---------- */
   let orbEl = null, orbTimer = 0, orbAnims = [];
-  const ORB_TYPES = ['image', 'video', 'anim', 'music'];
+  const ORB_TYPES = ['image', 'video', 'music'];
   let orbAudio = null, bigOn = false;
   function ensureOrb() { if (orbEl) return orbEl; orbEl = document.createElement('div'); orbEl.className = 'orbm'; orbEl.addEventListener('click', e => { if (e.target.closest('.obtn,video,iframe')) return; toggleBig(); }); cstage.appendChild(orbEl); return orbEl; }
   function stopAnims() { orbAnims.forEach(a => { try { a.cancel(); } catch (e) { } }); orbAnims = []; }
@@ -1109,6 +1109,14 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   }
   function hideOrb() { clearTimeout(orbTimer); toggleBig(false); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } cstage.classList.remove('explain'); const o = orbEl; setTimeout(() => { if (o && !cstage.classList.contains('explain')) { stopAnims(); o.innerHTML = ''; } }, 700); }
   function orbLater() { clearTimeout(orbTimer); if (!cstage.classList.contains('explain') || !orbEl) return; if (orbEl.querySelector('video,iframe')) { unmuteOrb(); return; } if (orbEl.dataset.music) return; orbTimer = setTimeout(hideOrb, 9000); }
+  function simCard(m) {
+    const c = document.createElement('div'); c.className = 'simc';
+    c.innerHTML = '<div class="sh"><span class="st1">🧪 Simulation</span><b></b><button type="button" class="sr" aria-label="Relancer la simulation">↻</button></div>';
+    c.querySelector('b').textContent = S(m.title, 70);
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.loading = 'lazy'; f.srcdoc = m.html; c.appendChild(f);
+    c.querySelector('.sr').addEventListener('click', () => { f.srcdoc = m.html; });
+    return c;
+  }
   function fileCard(m) {
     const ext = String(m.format || (String(m.title || '').split('.').pop()) || 'FILE').toUpperCase().slice(0, 5), kind = { PDF: 'PDF', EPUB: 'EPUB', HTML: 'HTML', JS: 'JS', ZIP: 'ZIP', DOCX: 'DOCX', TXT: 'TXT' }[ext] || ext;
     const ico = /^(JS|PY|JSON|CSS|TS)$/.test(ext) ? '</>' : /^(HTML|HTM)$/.test(ext) ? '🌐' : /^(ZIP|RAR|7Z)$/.test(ext) ? '🗜' : /^(MP3|WAV)$/.test(ext) ? '♪' : '▤';
@@ -1121,6 +1129,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function presentMedia(m, block) {
     if (!m) return false;
     if (ORB_TYPES.includes(m.type)) { if (showOrb(m)) { fx('fig'); return true; } return false; }
+    if (m.type === 'sim' && m.html) { block.appendChild(simCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) { const c = fileCard(m); block.appendChild(c); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     const fig = buildFigure(m); if (fig) { block.appendChild(fig); fx('fig'); follow(); setTimeout(follow, 350); return true; } return false;
   }

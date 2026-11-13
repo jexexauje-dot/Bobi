@@ -13,7 +13,7 @@ const EMOTIONS = ['neutral', 'joy', 'curious', 'excited', 'thinking', 'empathy',
 const EASES = ['smooth', 'snap', 'bounce', 'linear'];
 const SCENES = ['wave', 'projectile']; // plus de schémas emoji : seulement des simulations
 const BGS = ['space', 'sky', 'ocean', 'earth', 'night', 'lab', 'paper', 'fire'], FADES = ['none', 'in', 'out', 'pulse'];
-const MEDIA = ['image', 'video', 'music', 'file', 'site', 'anim', ...SCENES];
+const MEDIA = ['image', 'video', 'music', 'file', 'site', 'sim', ...SCENES];
 
 /* ---------- 2. Schéma imposé à Gemini (sortie JSON garantie) ---------- */
 const S = (type, extra = {}) => ({ type, ...extra });
@@ -53,7 +53,7 @@ CONTENU : quand tu développes, tu APPRENDS vraiment quelque chose : faits préc
 CORPS : à chaque phrase tu choisis l'émotion et le geste qui COLLENT au sens (tu pointes ce que tu montres, tu hausses les épaules quand tu hésites, tu te penches quand tu confies, tu fêtes les réussites). Pas de geste gratuit. Utilise 'gesture' pour les classiques, 'timeline' (poses clés, rotations en radians, bones: ${Object.keys(BONES).join(', ')}) pour tout autre mouvement humain. Varie, ne répète pas le même geste deux fois de suite.
 MÉDIAS = ta signature : quand tu EXPLIQUES un sujet (histoire, science, philosophie, nature, espace, technique, art…), tu montres du concret dans ton cercle, en plusieurs beats consécutifs, cohérents avec ce que tu dis. Ordre idéal : beat 1 ou 2 = 'anim' (petite animation qui montre le phénomène), beat suivant = 'image' (query précise en anglais, ex: \"Chelyabinsk meteor\"), beat suivant = 'video' (query précise en anglais). Les médias illustrent la phrase du beat : ne les annonce presque jamais (« regarde »), dis des faits. Pas de média sur une question simple (salut, merci, définition d'un mot, blague).
 'anim' : bg (space|sky|ocean|earth|night|lab|paper|fire) + 2 à 6 'actors' {emoji, x0,y0 → x1,y1 en % du cercle (0-100), size 6-60, delay, dur (secondes), spin, trail, fade, label}. Exemple météorite : bg space ; 🌍 size 46 fixe (x0=x1=50,y0=y1=62) ; ☄️ size 16 de (8,6) à (48,52), dur 2.4, trail true ; 💥 size 34 en (50,56), delay 2.4, dur 0.8, fade pulse. Mets les acteurs fixes en premier, les mobiles ensuite, les effets d'impact à la fin.
-SIMULATIONS SUR MESURE (pour N'IMPORTE QUEL sujet, jamais de simples boules) : un 'anim' peut mélanger emoji, 'text' (formules, noms, chiffres, ex 'CH₃-CH₂-OH', 'x² + 2x'), shape 'circle' (atome/point coloré avec son text dedans, ex 'C' noir #333, 'O' rouge #e33, 'H' blanc), 'box' (étiquette/étape), 'line' (liaison ou flèche de (x0,y0) à (x1,y1)) ; 'delay' fait apparaître les éléments UN PAR UN dans l'ordre de ta démonstration, 'fade':'in'. Règle : UN beat = UNE étape, l'anim du beat illustre exactement la phrase dite, avec les vrais éléments du sujet. Exemple nomenclature de CH₃-CH₂-CH₂-OH : beat A, 3 atomes C reliés en chaîne par des lines, label 'chaîne de 3 C = propan' ; beat B, un O rouge + H au bout, label 'groupe -OH = alcool → suffixe -ol' ; beat C, text 'propan-1-ol' qui apparaît (fade in) avec box 'numérote depuis le côté du OH'. Même logique en maths (étapes d'une équation en text), physique (forces = lines fléchées avec text), biologie (cellule = circle + boxes), histoire (frise = lines + boxes datées). Explique toujours AVEC un exemple concret choisi et traité pas à pas.
+SIMULATIONS (carte interactive dans la discussion, JAMAIS de dessin dans ton cercle : n'utilise plus 'anim') : media {type:'sim', title:'titre court', query:'description PRÉCISE de ce que la simulation doit montrer et permettre, avec l'exemple concret à traiter'}. Une 'sim' est construite sur mesure pour N'IMPORTE QUEL sujet : nomenclature d'un composé choisi (étapes : chaîne principale, groupe fonctionnel, numérotation, nom, avec boutons suivant), résolution d'équation pas à pas, forces, circuits, cellule, courbes à paramètres, frise… Demande-la dès que le sujet est une MÉTHODE, un PHÉNOMÈNE ou une STRUCTURE (science, maths, technique) et traite toujours un exemple concret. Max 1 'sim' par réponse, au beat 2 ou 3.
 RECHERCHE : 'query' = 2 à 5 mots-clés très précis avec le NOM EXACT du sujet (ex 'Eiffel Tower night', 'mitochondrie schéma'), jamais de mot vague ; privilégie les noms propres. Si le média demandé risque de ne pas exister, mieux vaut un 'anim' précis qu'une image approximative.
 Simulations : 'wave' (waves) pour les ondes, 'projectile' (angles, v0) pour un lancer. N'utilise JAMAIS de schéma en emojis (cycle, frise, comparaison, barres) : pour expliquer un processus, fais un 'anim' ou une image. Option : 'site' (URL si l'utilisateur parle d'un site). Mets look='media' quand un média est affiché.
 STRUCTURE : les beats s'enchaînent comme un récit (accroche, explication, détail surprenant, conclusion). Finis par une ouverture. Ajoute 2-3 suggestions et, si pertinent, un teaser. Mets dans memory ce que tu apprends de durable sur la personne. LIBERTÉ ET VÉRITÉ : tu réponds à TOUTES les questions, y compris sensibles, tabous ou controversées, franchement et sans moraliser : tu distingues faits établis, hypothèses et opinions, tu dis « je ne sais pas » quand c'est le cas, tu ne mens jamais pour faire plaisir.
@@ -64,7 +64,7 @@ VIDÉOS : toujours courtes (moins de 2 minutes) et modernes (2023-2026) : mets m
 MUSIQUE : si l'utilisateur demande d'écouter ou de chercher une chanson, un morceau, un artiste, tu mets au 2e beat un média 'music' avec query = « titre artiste » (ex: \"Despacito Luis Fonsi\"). Ton 1er beat dit que tu l'as trouvée et que l'utilisateur appuie sur ▶ pour que tu la lances (tu ne lances jamais sans son accord).
 NOUVEAUX MÉDIAS : à chaque demande (« une autre chanson », « encore une image », « une autre vidéo »…) tu donnes un média DIFFÉRENT de ceux déjà montrés (varie la query : autre version, autre artiste, autre angle, autre époque). Tu réponds toujours à la demande de média, même si tu viens d'en montrer un.
 COHÉRENCE : chaque média doit illustrer EXACTEMENT ce que dit la phrase du beat et le sujet de la conversation. Sa query contient toujours le nom du sujet (ex: pour une météorite → "meteorite", "Chelyabinsk meteor"), jamais un mot vague. Au moindre doute, pas de média.
-MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques un 'anim' (ou 'wave'/'projectile').
+MÉDIA OBLIGATOIRE : si l'utilisateur demande explicitement une image, une photo, une vidéo, un schéma ou une animation (ou dit « montre-moi »), tu DOIS mettre le média demandé dès le 2e beat. Pour un schéma ou une animation tu fabriques une 'sim' (ou 'wave'/'projectile').
 RELANCES : tes 3 suggestions sont des ouvertures « jusqu'où ? » qui donnent envie d'aller plus loin (le détail qui choque, la question suivante naturelle). Une des suggestions peut être un défi : « Je te l'explique à ma façon, corrige-moi ». Remplis 'topic' quand tu as enseigné quelque chose.
 Réponds UNIQUEMENT en JSON conforme au schéma.`;
 
@@ -92,12 +92,29 @@ const to = (ms) => AbortSignal.timeout(ms);
 const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, getJson = async u => (await fetch(u, { headers: UA, signal: to(4000) })).json();
 const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'photo', 'image', 'video', 'file', 'des', 'les', 'une', 'dans', 'pour', 'avec', 'sur']);
-const relevant = (title, q) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return ks.length < 3 ? hit >= 1 : hit >= Math.ceil(ks.length * .5); };
+const relevant = (title, q, strict) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return strict ? hit >= (ks.length <= 2 ? ks.length : Math.ceil(ks.length * .8)) : ks.length < 3 ? hit >= 1 : hit >= Math.ceil(ks.length * .5); };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 const mkey = m => m && (m.url || m.file || m.embed || m.audio || '');
+async function genSim(title, desc) { // Gemini écrit une vraie simulation interactive (HTML autonome) sur mesure pour le sujet
+  if (!KEY) return undefined;
+  const SYS = `Tu es un développeur-pédagogue. Tu écris UNE simulation interactive en HTML/CSS/JS pur, autonome (aucune ressource externe, aucun fetch), qui explique EXACTEMENT le sujet demandé, en français. Règles : fond sombre (#14161a), texte clair, police system-ui, largeur 100% (responsive, ~340px de haut utile), boutons tactiles grands. Dessine les VRAIS objets du sujet (molécule = atomes colorés reliés par des liaisons avec symboles ; équation = lignes de texte transformées étape par étape ; forces = flèches ; cellule, circuit, courbe, frise… selon le sujet) avec canvas ou SVG ou DOM. Pour une méthode (nomenclature, résolution, démonstration, protocole) : étapes numérotées avec boutons « Précédent / Suivant », une phrase d'explication par étape, l'élément concerné mis en surbrillance, et un exemple concret complet traité de bout en bout ; ajoute un bouton « Autre exemple » si pertinent. Pour un phénomène : curseurs/boutons pour changer les paramètres et voir l'effet en temps réel, avec légende et valeurs affichées. Jamais de boules qui bougent au hasard : chaque mouvement doit avoir un sens physique ou pédagogique. Réponds UNIQUEMENT avec le code HTML complet (<!doctype html>…), sans explication ni balises markdown. Maximum 9000 caractères.`;
+  for (const model of MODELS.slice(0, 3)) {
+    if ((blocked.get(model) || 0) > Date.now()) continue;
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(26000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: [{ text: `Sujet : ${title}\nSimulation à construire : ${desc}` }] }], generationConfig: { temperature: .5, maxOutputTokens: 9000, ...thinkCfg(model) } }) });
+      if (!r.ok) { if (r.status === 429 || r.status === 404) blocked.set(model, Date.now() + 6e4); continue; }
+      const j = await r.json(); let h = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
+      const i = h.search(/<!doctype|<html|<body|<div|<canvas|<svg/i); if (i > 0) h = h.slice(i);
+      if (h.length > 400 && h.length < 60000 && /<script/i.test(h) && !/fetch\(|XMLHttpRequest|WebSocket|src=["']?https?:|<link|<iframe|document\.cookie|localStorage|window\.(top|parent)|location\s*[.=]/i.test(h)) return h;
+    } catch { }
+  }
+  return undefined;
+}
 async function resolveMedia(m, emit = () => {}, skip = []) {
   const SK = (skip || []).slice(-40), sk = SK.length ? '|' + crypto.createHash('sha1').update(SK.join('|')).digest('hex').slice(0, 8) : '';
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
+  if (m.type === 'sim') { emit({ icon: '🧪', label: 'Je construis une simulation : ' + String(m.title || '').slice(0, 40) }); const h = await cached('sim:' + String(m.title) + '|' + String(m.query), () => genSim(String(m.title || m.query || '').slice(0, 120), String(m.query || m.title || '').slice(0, 400))); return h ? { ...base, html: h } : undefined; }
   if (m.type === 'image') emit({ icon: '🖼️', label: 'Je cherche une image : ' + String(m.query || '').slice(0, 40) });
   else if (m.type === 'video') emit({ icon: '▶️', label: 'Je cherche une vidéo sur le sujet' });
   else if (m.type === 'anim') emit({ icon: '🎬', label: 'Je prépare une animation' });
@@ -143,19 +160,19 @@ async function resolveMedia(m, emit = () => {}, skip = []) {
     if (YT) { const modern = m.modern !== false, q = encodeURIComponent(m.query);
       const ytq = after => getJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&safeSearch=strict&videoDuration=short&maxResults=6&q=' + q + (after ? '&publishedAfter=2023-01-01T00:00:00Z' : '') + '&key=' + YT).catch(() => null);
       let r = await ytq(modern); if (modern && !r?.items?.length) r = await ytq(false);
-      const items = (r?.items || []).filter(v => v.id?.videoId && !SK.includes('https://www.youtube-nocookie.com/embed/' + v.id.videoId) && relevant(v.snippet?.title, m.query));
+      const items = (r?.items || []).filter(v => v.id?.videoId && !SK.includes('https://www.youtube-nocookie.com/embed/' + v.id.videoId) && relevant(v.snippet?.title, m.query, true));
       if (items.length) { const d = await getJson('https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=' + items.map(v => v.id.videoId).join(',') + '&key=' + YT).catch(() => null);
         const secs = {}; for (const x of d?.items || []) { const t = /PT(?:(\d+)M)?(?:(\d+)S)?/.exec(x.contentDetails?.duration || ''); secs[x.id] = t ? (+t[1] || 0) * 60 + (+t[2] || 0) : 999; }
         const v = items.slice().sort((a, b) => (secs[a.id.videoId] > 120) - (secs[b.id.videoId] > 120) || (secs[a.id.videoId] || 999) - (secs[b.id.videoId] || 999))[0];
         return { ...base, title: base.title || v.snippet.title, embed: 'https://www.youtube-nocookie.com/embed/' + v.id.videoId, search }; } }
     // sans clé : vidéos libres de Wikimedia Commons (lecture directe dans le cercle de Bobi)
     const r = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|mime|extmetadata|timestamp|size&iiurlwidth=640&gsrsearch=' + encodeURIComponent(m.query + ' filetype:video')).catch(() => null);
-    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => relevant(p.title, m.query) && !SK.includes(p.imageinfo?.[0]?.url) && /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
+    const vids = Object.values(r?.query?.pages || {}).sort((a, b) => a.index - b.index).filter(p => relevant(p.title, m.query, true) && !SK.includes(p.imageinfo?.[0]?.url) && /^video\//.test(p.imageinfo?.[0]?.mime || '') && /^https:\/\//.test(p.imageinfo[0].url));
     const modernV = m.modern !== false, rank = p => { const i = p.imageinfo[0]; return (i.duration > 120 ? 2 : 0) + (modernV && !(String(i.timestamp || '') >= '2023') ? 1 : 0) + (/webm|mp4/.test(i.mime) ? 0 : .5); };
     const p = vids.slice().sort((a, b) => rank(a) - rank(b))[0];
     if (p) { const i = p.imageinfo[0]; return { ...base, file: i.url, mime: i.mime, poster: i.thumburl, credit: clean(i.extmetadata?.Artist?.value) || 'Wikimedia Commons', page: i.descriptionurl, search }; }
     const rn = await getJson('https://images-api.nasa.gov/search?media_type=video&page_size=6&q=' + encodeURIComponent(m.query)).catch(() => null);
-    const it = (rn?.collection?.items || []).find(i => i.href && relevant((i.data?.[0]?.title || '') + ' ' + (i.data?.[0]?.keywords || []).join(' '), m.query));
+    const it = (rn?.collection?.items || []).find(i => i.href && relevant((i.data?.[0]?.title || '') + ' ' + (i.data?.[0]?.keywords || []).join(' '), m.query, true));
     if (it) { const man = await getJson(it.href.replace(/^http:/, 'https:')).catch(() => null); const urls = (Array.isArray(man) ? man : []).map(u => String(u).replace(/^http:/, 'https:')); const mp4 = urls.find(u => /~medium\.mp4$/.test(u)) || urls.find(u => /\.mp4$/.test(u));
       if (mp4) return { ...base, file: mp4, mime: 'video/mp4', poster: (it.links?.[0]?.href || '').replace(/^http:/, 'https:'), credit: 'NASA : ' + clean(it.data[0].title), page: 'https://images.nasa.gov/details/' + encodeURIComponent(it.data[0].nasa_id), search }; }
     return { ...base, search }; });
@@ -186,7 +203,7 @@ async function cleanBeat(b, emit = () => {}, skip = []) {
   if (!b || !b.say) return null;
   const out = { say: String(b.say).slice(0, 420), emotion: EMOTIONS.includes(b.emotion) ? b.emotion : 'neutral', intensity: Math.max(0, Math.min(1, Number.isFinite(+b.intensity) ? +b.intensity : .6)),
     gesture: GESTURES.includes(b.gesture) ? b.gesture : undefined, timeline: cleanTimeline(b.timeline), look: ['user', 'media', 'away', 'up'].includes(b.look) ? b.look : 'user' };
-  const m = await withTimeout(resolveMedia(b.media, emit, skip).catch(() => undefined), 4500); if (m) out.media = m;
+  const m = await withTimeout(resolveMedia(b.media, emit, skip).catch(() => undefined), b.media?.type === 'sim' ? 30000 : 4500); if (m) out.media = m;
   if (m?.type === 'image' && m.url) emit({ icon: '✅', label: 'Image trouvée' });
   else if (m?.type === 'site') emit({ icon: m.embeddable ? '✅' : '🔒', label: m.embeddable ? 'Site vérifié, je peux te le montrer' : 'Site vérifié : je te le présente en carte' });
   return out;
@@ -336,12 +353,13 @@ app.post('/api/chat', async (req, res) => {
         let f; const hasVid = beats.some(x => x.media && x.media.type === 'video');
         if (i === 1) { const im = await withTimeout(fbImg, 3500); if (im && im.url && !usedImg.has(im.url)) { f = im; usedImg.add(im.url); } }
         else if (i === 2 && !hasVid) { const v = await withTimeout(fbVid, 3500); if (v && (v.file || v.embed)) f = v; }
-        if (!f && animN < 3) { animN++; const q = await withTimeout(qP, 1500); f = await withTimeout(genAnim(b.say, q), 7500); }
+        if (false && !f && animN < 3) { animN++; const q = await withTimeout(qP, 1500); f = await withTimeout(genAnim(b.say, q), 7500); }
         if (f) b.media = f;
       }
       if (b.media && mkey(b.media)) { shown.push(mkey(b.media)); if (shown.length > 60) shown.splice(0, shown.length - 60); }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, simple ? SYSTEM_SHORT : SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80)), simple ? schemaLite : schema); resolveQ(''); await chain;
+    if (intent && !beats.some(x => x.media && (x.media.type === intent || (intent === 'video' && x.media.type === 'link')))) { const nb = { say: intent === 'video' ? 'Je n\'ai pas réussi à trouver la vidéo exacte que tu demandes, et je préfère ne rien te montrer plutôt que te donner autre chose. Donne-moi le titre ou le nom exact, et je réessaie !' : intent === 'image' ? 'Je n\'ai pas trouvé d\'image qui correspond vraiment à ta demande, alors je ne t\'en montre pas une approximative. Tu peux préciser le nom exact ?' : 'Je n\'ai pas trouvé exactement ce que tu demandes. Tu peux me donner le titre ou le nom exact ?', emotion: 'empathy', gesture: 'shrug', intensity: .6, look: 'user' }; beats.push(nb); if (stream) { head(); res.write(JSON.stringify({ beat: nb }) + '\n'); } }
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say + (b.media ? ` [média montré : ${b.media.type} ${b.media.title || ''} ${b.media.artist || ''}]` : '')).join(' ') }] }); u.history = u.history.slice(-20);
