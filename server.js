@@ -95,8 +95,9 @@ const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'phot
 const relevant = (title, q, strict) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return hit >= 1; };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 const mkey = m => m && (m.url || m.file || m.embed || m.audio || '');
+const simCode = html => String(html || '').slice(String(html || '').indexOf('</script>') + 9).replace(/<\/body><\/html>\s*$/, ''), lastSimBy = new Map();
 const SIMLIB = fs.readFileSync(new URL('./simlib.js', import.meta.url), 'utf8'), SIMEX = fs.readFileSync(new URL('./simexamples.txt', import.meta.url), 'utf8');
-async function genSim(title, desc) { // Gemini écrit une vraie simulation interactive (HTML autonome) sur mesure pour le sujet
+async function genSim(title, desc, prevCode) { // Gemini écrit une vraie simulation interactive (HTML autonome) sur mesure pour le sujet
   if (!KEY) return undefined;
   const SYS = `Tu es un développeur-pédagogue d'élite. Tu écris une simulation interactive qui explique EXACTEMENT le sujet demandé, en français, fidèle à ce que l'utilisateur veut voir.
 MÉTHODE (obligatoire, réfléchis avant de coder) : 1) liste tout ce que la demande nomme (objets, forces, étapes, éléments) : TOUS doivent être dessinés et étiquetés, rien d'inventé ; 2) vérifie la justesse scientifique (directions, sens, formules, valeurs : ex. poids vertical vers le bas, réaction normale perpendiculaire à la surface, frottement opposé au mouvement) ; 3) choisis la forme : MÉTHODE/PROCÉDURE → Sim.steps (une étape = une idée, l'élément concerné surligné, exemple concret traité de bout en bout) ; PHÉNOMÈNE/PHYSIQUE → Sim.stage animé avec Sim.slider pour les paramètres et valeurs affichées ; STRUCTURE → schéma étiqueté avec légende. Jamais de formes décoratives ni de mouvements sans signification.
@@ -104,14 +105,15 @@ FORMAT : tu écris UNIQUEMENT du code : un ou plusieurs blocs <script> (et au be
 Sim.stage((ctx,W,H,dt)=>{...},{height}) boucle d'animation sur canvas responsive (redessine tout à chaque image ; dt en secondes) ;
 Sim.text(ctx,str,x,y,{size,color,align,bold}) ; Sim.arrow(ctx,x,y,dx,dy,color,label,{dash,w}) flèche de vecteur (dx,dy) en pixels ; Sim.ball(ctx,x,y,r,color) ; Sim.incline(ctx,x0,yBas,longueur,angleDeg) dessine le plan et renvoie {len,top,u(haut du plan),d(bas),n(normale sortante),pos(s,décalage)} ;
 Sim.atom(ctx,x,y,symbole,couleur,r) ; Sim.bond(ctx,x1,y1,x2,y2,ordre) (liaison simple/double/triple) ; Sim.slider(label,min,max,val,pas,callback,unité) ; Sim.button(label,fn) ; Sim.say(html) texte explicatif sous le dessin ; Sim.steps([{t:titre,d:explication html}],onChange) → {i,go} boutons Précédent/Suivant.
-Tu peux dessiner aussi directement avec le contexte canvas 2D (courbes, axes, cellule, circuit…). Hauteur utile 260-340 px, largeur variable (utilise W et H, jamais de pixels fixes pour les positions). Pas de ressource externe, pas de fetch. Maximum 7000 caractères de code.
-Voici deux exemples de la qualité attendue (adapte-toi au sujet, ne les recopie pas) :
+Sim.line(ctx,x1,y1,x2,y2,couleur,épaisseur,pointillé) ; Sim.box(ctx,x,y,w,h,texte,couleur) étiquette/bloc ; Sim.dot(ctx,x,y,couleur,texte) point repéré ; Sim.plot(ctx,{x0,y0,w,h,xmin,xmax,ymin,ymax,fns:[{f:v=>…,color,label}],xlabel,ylabel}) trace axes gradués + courbes et renvoie {X(v),Y(v)} pour placer des points mobiles sur la courbe. Tu peux dessiner aussi directement avec le contexte canvas 2D (courbes, axes, cellule, circuit…). Hauteur utile 260-340 px, largeur variable (utilise W et H, jamais de pixels fixes pour les positions). Pas de ressource externe, pas de fetch. Maximum 7000 caractères de code.
+RÈGLE ABSOLUE : chaque simulation est CONÇUE POUR LA DEMANDE. Interdit de reprendre le plan incliné, les flèches de forces ou la molécule des exemples si la demande ne porte pas exactement dessus ; les exemples ne montrent que le NIVEAU DE FINITION. Idées de conceptions selon le sujet (non exhaustif) : circuit électrique (pile, résistances, ampèremètre, courant animé, loi d'Ohm avec curseurs) ; courbe d'une fonction (Sim.plot, curseurs sur les coefficients, point mobile) ; réfraction de la lumière (rayon, normale, angles, loi de Snell) ; pendule / ressort (oscillation + courbe de position) ; gaz parfait (piston, pression, température) ; cycle de l'eau, photosynthèse, cellule, ADN (schéma étiqueté animé par étapes) ; système solaire / phases de la Lune / saisons (orbites à l'échelle pédagogique) ; équilibrage d'une équation chimique (atomes comptés de chaque côté) ; théorème de Pythagore / géométrie (figure qui se construit, aires) ; fractions, pourcentages, probabilités (dés, barres qui se remplissent) ; arbre d'analyse grammaticale ; frise chronologique d'événements historiques avec dates ; économie (offre/demande avec 2 courbes qui se croisent). Pour toute demande inconnue, invente la représentation la plus fidèle et la plus parlante possible.
+Exemples de FINITION uniquement :
 ` + SIMEX;
   for (const model of MODELS.slice(0, 3)) {
     if ((blocked.get(model) || 0) > Date.now()) continue;
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: to(40000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: [{ text: `Sujet : ${title}\nSimulation à construire : ${desc}` }] }], generationConfig: { temperature: .5, maxOutputTokens: 12000, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 1500 } } : thinkCfg(model)) } }) });
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: [{ text: prevCode ? `Voici le code actuel de la simulation « ${title} » (la bibliothèque Sim est déjà chargée). Modifie-le selon la demande de l'utilisateur en gardant tout ce qui fonctionne déjà. Demande : ${desc}\n\nCODE ACTUEL :\n${prevCode}\n\nRenvoie le code COMPLET modifié.` : `Sujet : ${title}\nSimulation à construire : ${desc}` }] }], generationConfig: { temperature: .5, maxOutputTokens: 12000, ...(/gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 1500 } } : thinkCfg(model)) } }) });
       if (!r.ok) { if (r.status === 429 || r.status === 404) blocked.set(model, Date.now() + 6e4); continue; }
       const j = await r.json(); let h = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
       const i = h.search(/<!doctype|<html|<body|<div|<canvas|<svg/i); if (i > 0) h = h.slice(i);
@@ -338,6 +340,16 @@ app.post('/api/chat', async (req, res) => {
     const ctx = `[Contexte: visite n°${u.visits}, série de ${u.streak} jour(s). Ce que tu sais de l'utilisateur: ${u.memory.slice(-15).join('; ') || 'rien encore'}.]`;
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
+    const lastSim = lastSimBy.get(id);
+    if (lastSim && Date.now() - lastSim.t < 6 * 36e5 && /(modifi|ajout|rajout|enl[eè]v|retir|supprim|corrig|am[eé]lior|chang|remplac|rends|plus (grand|petit|gros|rapide|lent|clair|visible|d[ée]taill)|moins|il manque|manque)/i.test(text) && !/(nouvelle|autre) simulation|simulation (sur|de|du|des|d')/i.test(text)) {
+      emit({ icon: '🧪', label: 'Je modifie la simulation' });
+      const h = await genSim(lastSim.title, text, lastSim.code);
+      if (h) { lastSimBy.set(id, { ...lastSim, code: simCode(h), t: Date.now() });
+        const nb = { say: 'Voilà, j\'ai modifié la simulation comme tu l\'as demandé ! Dis-moi si tu veux encore l\'ajuster.', emotion: 'proud', gesture: 'present', intensity: .7, look: 'media', media: { type: 'sim', title: lastSim.title, caption: '', html: h } };
+        u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: nb.say + ' [simulation modifiée : ' + lastSim.title + ']' }] }); u.history = u.history.slice(-20); save();
+        const out = { suggestions: ['Ajoute un autre élément', 'Explique-moi cette simulation'], userId: id, streak: u.streak, visits: u.visits };
+        if (stream) { head(); res.write(JSON.stringify({ beat: nb }) + '\n'); send({ done: out }); } else send({ beats: [nb], ...out });
+        return; } }
     const beats = []; let chain = Promise.resolve();
     const simple = (text.length < 14 && !/image|photo|vid|montre|simul|pdf|livre|chanson|fichier/i.test(text)) || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
     const wantVid = /vid[ée]o|film|extrait/i.test(text);
@@ -345,7 +357,7 @@ app.post('/api/chat', async (req, res) => {
     const fbImg = qP.then(q => q && !simple ? resolveMedia({ type: 'image', query: q }) : undefined).catch(() => undefined);
     const fbVid = qP.then(q => q && !simple ? resolveMedia({ type: 'video', query: q }) : undefined).catch(() => undefined);
     const shown = u.shown || (u.shown = []);
-    const intent = /t[ée]l[ée]charg|\bpdf\b|\blivre\b|\bmanuel\b|\b[ée]pub\b|fichier/i.test(text) ? 'file' : /chanson|musique|morceau|[ée]couter|titre de|clip musical/i.test(text) ? 'music' : /vid[ée]o|clip|extrait|film/i.test(text) ? 'video' : /image|photo|montre|voir|illustr|dessin|sch[ée]ma/i.test(text) ? 'image' : null;
+    const intent = /simulation|simule/i.test(text) ? null : /t[ée]l[ée]charg|\bpdf\b|\blivre\b|\bmanuel\b|\b[ée]pub\b|fichier/i.test(text) ? 'file' : /chanson|musique|morceau|[ée]couter|titre de|clip musical/i.test(text) ? 'music' : /vid[ée]o|clip|extrait|film/i.test(text) ? 'video' : /image|photo|montre|voir|illustr|dessin|sch[ée]ma/i.test(text) ? 'image' : null;
     const rawQ = text.replace(/[?!.,]/g, ' ').replace(/\b(s'il (te|vous) pla[iî]t|cherche|trouve|montre[- ]moi|montre|affiche|fais[- ]moi (voir|[ée]couter)|[ée]coute|lance|mets|met|une?|des?|du|le|la|les|l'|d'|autre|encore|chanson|musique|morceau|titre|image|photo|vid[ée]o|clip|t[ée]l[ée]charge(r)?|pdf|livre|fichier|manuel|moi|me|de|sur|avec|et)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
     const fbIntent = intent ? (async () => { const q1 = await withTimeout(qP, 2500); const tries = [...new Set([rawQ, q1, text.slice(0, 60)].filter(Boolean))];
       for (const q of tries) { const r = await resolveMedia({ type: intent, query: q, modern: true }, () => {}, shown).catch(() => undefined); if (r && mkey(r)) return r; if (r && r.type === 'file' && r.dl) return r; }
@@ -366,6 +378,7 @@ app.post('/api/chat', async (req, res) => {
         if (false && !f && animN < 3) { animN++; const q = await withTimeout(qP, 1500); f = await withTimeout(genAnim(b.say, q), 7500); }
         if (f) b.media = f;
       }
+      if (b.media?.type === 'sim' && b.media.html) lastSimBy.set(id, { title: b.media.title, code: simCode(b.media.html), t: Date.now() });
       if (b.media && mkey(b.media)) { shown.push(mkey(b.media)); if (shown.length > 60) shown.splice(0, shown.length - 60); }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, simple ? SYSTEM_SHORT : SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80)), simple ? schemaLite : schema); resolveQ(''); await chain;

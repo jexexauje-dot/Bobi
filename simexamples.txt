@@ -1,4 +1,4 @@
-EXEMPLE 1 (référence de qualité, forces sur une bille sur un plan incliné) :
+EXEMPLE DE FINITION A (sujet : forces sur un plan incliné — ne PAS réutiliser pour un autre sujet) :
 <script>
 let ang=30,mu=.2,s=0,v=0;
 Sim.slider('Angle',0,60,30,1,a=>{ang=a;s=0;v=0},'°');
@@ -20,7 +20,7 @@ Sim.stage((x,W,H,dt)=>{
 },{height:320});
 </script>
 
-EXEMPLE 2 (référence, nomenclature pas à pas, molécule CH3-CH2-CH2-OH) :
+EXEMPLE DE FINITION B (sujet : nomenclature du propan-1-ol — ne PAS réutiliser pour un autre sujet) :
 <script>
 const at=[{s:'C',x:.22,y:.55,c:'#555'},{s:'C',x:.42,y:.4,c:'#555'},{s:'C',x:.62,y:.55,c:'#555'},{s:'O',x:.82,y:.4,c:'#e53935'},{s:'H',x:.94,y:.52,c:'#bbbbbb'}],bd=[[0,1],[1,2],[2,3],[3,4]];
 const st=Sim.steps([
