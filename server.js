@@ -92,7 +92,7 @@ const to = (ms) => AbortSignal.timeout(ms);
 const UA = { 'User-Agent': 'BobiBot/1.0 (https://bobi-57i1.onrender.com; chatbot educatif)' }, getJson = async u => (await fetch(u, { headers: UA, signal: to(4000) })).json();
 const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'photo', 'image', 'video', 'file', 'des', 'les', 'une', 'dans', 'pour', 'avec', 'sur']);
-const relevant = (title, q, strict) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return strict ? hit >= (ks.length <= 2 ? ks.length : Math.ceil(ks.length * .8)) : ks.length < 3 ? hit >= 1 : hit >= Math.ceil(ks.length * .5); };
+const relevant = (title, q, strict) => { const t = norm(title), ks = norm(q).split(/[^a-z0-9]+/).filter(w => (w.length >= 4 || /^\d+$/.test(w)) && !STOP.has(w)); if (!ks.length) return true; const hit = ks.filter(k => t.includes(k.length > 6 ? k.slice(0, k.length - 1) : k)).length; return hit >= 1; };
 const clean = x => String(x || '').replace(/<[^>]+>/g, '').slice(0, 80);
 const mkey = m => m && (m.url || m.file || m.embed || m.audio || '');
 const SIMLIB = fs.readFileSync(new URL('./simlib.js', import.meta.url), 'utf8'), SIMEX = fs.readFileSync(new URL('./simexamples.txt', import.meta.url), 'utf8');
@@ -116,7 +116,7 @@ Voici deux exemples de la qualité attendue (adapte-toi au sujet, ne les recopie
       const j = await r.json(); let h = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
       const i = h.search(/<!doctype|<html|<body|<div|<canvas|<svg/i); if (i > 0) h = h.slice(i);
       h = h.replace(/<!doctype[^>]*>|<\/?(html|head|body)[^>]*>|<meta[^>]*>|<title>[\s\S]*?<\/title>/gi, '');
-      if (h.length > 300 && h.length < 40000 && /<script/i.test(h) && !/fetch\(|XMLHttpRequest|WebSocket|src=["']?https?:|<link|<iframe|document\.cookie|localStorage|window\.(top|parent)|location\s*[.=]/i.test(h)) return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>' + SIMLIB + '</script>' + h + '</body></html>';
+      if (h.length > 300 && h.length < 40000 && /<\/script>\s*$/i.test(h) && (h.match(/<script/gi) || []).length === (h.match(/<\/script>/gi) || []).length && /<script/i.test(h) && !/fetch\(|XMLHttpRequest|WebSocket|src=["']?https?:|<link|<iframe|document\.cookie|localStorage|window\.(top|parent)|location\s*[.=]/i.test(h)) return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>' + SIMLIB + '</script>' + h + '</body></html>';
     } catch { }
   }
   return undefined;
@@ -339,7 +339,7 @@ app.post('/api/chat', async (req, res) => {
     const contents = [...u.history.slice(-10), { role: 'user', parts: [{ text: ctx + '\n' + text }] }];
     emit({ icon: '📖', label: 'Je lis ta question' });
     const beats = []; let chain = Promise.resolve();
-    const simple = (text.length < 40 && !/image|photo|vid[ée]o|montre|t[ée]l[ée]charg|pdf|livre|chanson|musique|fichier|pourquoi|comment|explique/i.test(text)) || text.length < 14 || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
+    const simple = (text.length < 14 && !/image|photo|vid|montre|simul|pdf|livre|chanson|fichier/i.test(text)) || /^(salut|bonjour|coucou|merci|ok|oui|non|ça va|ca va|hello|hey)\b/i.test(text) || /blague/i.test(text);
     const wantVid = /vid[ée]o|film|extrait/i.test(text);
     let resolveQ; const qP = new Promise(r => { resolveQ = r; });
     const fbImg = qP.then(q => q && !simple ? resolveMedia({ type: 'image', query: q }) : undefined).catch(() => undefined);
@@ -369,7 +369,7 @@ app.post('/api/chat', async (req, res) => {
       if (b.media && mkey(b.media)) { shown.push(mkey(b.media)); if (shown.length > 60) shown.splice(0, shown.length - 60); }
       beats.push(b); if (stream) { head(); res.write(JSON.stringify({ beat: b }) + '\n'); } }); };
     const tail = await geminiStream(contents, simple ? SYSTEM_SHORT : SYSTEM, onBeat, emit, q => resolveQ(String(q || '').slice(0, 80)), simple ? schemaLite : schema); resolveQ(''); await chain;
-    if (intent && !beats.some(x => x.media && (x.media.type === intent || (intent === 'video' && x.media.type === 'link')))) { const nb = { say: intent === 'video' ? 'Je n\'ai pas réussi à trouver la vidéo exacte que tu demandes, et je préfère ne rien te montrer plutôt que te donner autre chose. Donne-moi le titre ou le nom exact, et je réessaie !' : intent === 'image' ? 'Je n\'ai pas trouvé d\'image qui correspond vraiment à ta demande, alors je ne t\'en montre pas une approximative. Tu peux préciser le nom exact ?' : 'Je n\'ai pas trouvé exactement ce que tu demandes. Tu peux me donner le titre ou le nom exact ?', emotion: 'empathy', gesture: 'shrug', intensity: .6, look: 'user' }; beats.push(nb); if (stream) { head(); res.write(JSON.stringify({ beat: nb }) + '\n'); } }
+    if (intent && !beats.some(x => x.media)) { const nb = { say: intent === 'video' ? 'Je n\'ai trouvé aucune vidéo, même approchante. Donne-moi le titre ou le nom exact, et je réessaie !' : intent === 'image' ? 'Je n\'ai trouvé aucune image, même approchante. Tu peux préciser le nom exact ?' : 'Je n\'ai pas trouvé exactement ce que tu demandes. Tu peux me donner le titre ou le nom exact ?', emotion: 'empathy', gesture: 'shrug', intensity: .6, look: 'user' }; beats.push(nb); if (stream) { head(); res.write(JSON.stringify({ beat: nb }) + '\n'); } }
     if (!beats.length) throw new Error('réponse vide');
     const meta = cleanMeta(tail);
     u.history.push({ role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text: beats.map(b => b.say + (b.media ? ` [média montré : ${b.media.type} ${b.media.title || ''} ${b.media.artist || ''}]` : '')).join(' ') }] }); u.history = u.history.slice(-20);

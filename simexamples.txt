@@ -8,7 +8,7 @@ Sim.say('<b>Forces sur la bille (m = 1 kg, g = 9,8)</b><br>Poids <b style="color
 Sim.stage((x,W,H,dt)=>{
  const inc=Sim.incline(x,W*.1,H-28,W*.78,ang),t=ang*Math.PI/180,g=9.8,k=7,r=15;
  const tmax=inc.len-r*2,sl=g*Math.sin(t),Nn=g*Math.cos(t),moving=mu*Nn<sl-1e-6||v>0&&s<tmax;
- const a=mu*Nn<sl?sl-mu*Nn:0; if(a>0){v+=a*dt*18;s+=v*dt*18; if(s>tmax){s=0;v=0}} else {v=0}
+ const a=mu*Nn<sl?sl-mu*Nn:0; if(a>0){v+=a*dt*6;s+=v*dt*6; if(s>tmax){s=0;v=0}} else {v=0}
  const c=inc.pos(s+r+4,r),px=c[0],py=c[1];Sim.ball(x,px,py,r,'#4aa3ff');
  const fN=Nn*k,fP=g*k,ff=(a>0?mu*Nn:sl)*k;
  Sim.arrow(x,px,py,0,fP,'#ff5d5d','P = mg');

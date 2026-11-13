@@ -1113,7 +1113,7 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     const c = document.createElement('div'); c.className = 'simc';
     c.innerHTML = '<div class="sh"><span class="st1">🧪 Simulation</span><b></b><button type="button" class="sr" aria-label="Relancer la simulation">↻</button></div>';
     c.querySelector('b').textContent = S(m.title, 70);
-    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.loading = 'lazy'; f.srcdoc = m.html; c.appendChild(f);
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.srcdoc = m.html; c.appendChild(f);
     c.querySelector('.sr').addEventListener('click', () => { f.srcdoc = m.html; });
     return c;
   }

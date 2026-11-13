@@ -1,8 +1,8 @@
 const Sim=(()=>{
 const st=document.createElement('style');st.textContent='*{box-sizing:border-box}body{margin:0;background:#14161a;color:#eee;font:14px system-ui,sans-serif;overflow-x:hidden}canvas{display:block;width:100%}#ctl{display:flex;flex-wrap:wrap;gap:8px 14px;padding:8px 12px;align-items:center}#ctl label{display:flex;align-items:center;gap:6px;font-size:13px}#ctl input[type=range]{width:120px;accent-color:#e8a317}.b{background:#2b2e34;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-size:14px;cursor:pointer}.b:disabled{opacity:.35}#pan{padding:6px 14px 12px;font-size:14px;line-height:1.45}#pan b{color:#e8a317}';document.head.appendChild(st);
 const cv=document.createElement('div'),ctl=document.createElement('div'),pan=document.createElement('div');ctl.id='ctl';pan.id='pan';document.body.append(cv,ctl,pan);
-const A={};
-A.stage=(draw,o={})=>{const c=document.createElement('canvas');cv.appendChild(c);const x=c.getContext('2d');let W,H,last=performance.now();
+const A={};let used=0;addEventListener('error',e=>{pan.innerHTML='<b style="color:#ff6b6b">Erreur dans la simulation :</b> '+String(e.message).slice(0,160)});setTimeout(()=>{if(!used)pan.innerHTML='<b>La simulation n’a rien dessiné.</b> Appuie sur ↻ ou redemande-la.'},2500);
+A.stage=(draw,o={})=>{used=1;const c=document.createElement('canvas');cv.appendChild(c);const x=c.getContext('2d');let W,H,last=performance.now();
 const fit=()=>{const r=devicePixelRatio||1;W=cv.clientWidth||340;H=o.height||300;c.width=W*r;c.height=H*r;c.style.height=H+'px';x.setTransform(r,0,0,r,0,0)};fit();addEventListener('resize',fit);
 (function f(n){const dt=Math.min(.05,(n-last)/1000);last=n;x.clearRect(0,0,W,H);draw(x,W,H,dt);requestAnimationFrame(f)})(last)};
 A.text=(x,s,px,py,o={})=>{x.save();x.font=(o.bold?'700 ':'500 ')+(o.size||14)+'px system-ui,sans-serif';x.fillStyle=o.color||'#fff';x.textAlign=o.align||'center';x.textBaseline='middle';x.fillText(s,px,py);x.restore()};
@@ -14,6 +14,6 @@ A.atom=(x,px,py,sym,color,r=16)=>{x.save();x.fillStyle=color;x.strokeStyle='#000
 A.bond=(x,x1,y1,x2,y2,order=1,color='#cfd3da')=>{const a=Math.atan2(y2-y1,x2-x1),px=-Math.sin(a)*4,py=Math.cos(a)*4;x.save();x.strokeStyle=color;x.lineWidth=3;x.lineCap='round';for(let i=0;i<order;i++){const k=i-(order-1)/2;x.beginPath();x.moveTo(x1+px*k*1.4,y1+py*k*1.4);x.lineTo(x2+px*k*1.4,y2+py*k*1.4);x.stroke()}x.restore()};
 A.slider=(label,min,max,val,step,cb,unit='')=>{const l=document.createElement('label'),i=document.createElement('input'),v=document.createElement('span');i.type='range';i.min=min;i.max=max;i.step=step;i.value=val;l.append(label+' ',i,v);ctl.appendChild(l);const u=()=>{v.textContent=(+i.value)+unit;cb&&cb(+i.value)};i.oninput=u;u();return()=>+i.value};
 A.button=(label,fn)=>{const b=document.createElement('button');b.className='b';b.textContent=label;b.onclick=fn;ctl.appendChild(b);return b};
-A.say=h=>{pan.innerHTML=h};
+A.say=h=>{used=1;pan.innerHTML=h};
 A.steps=(list,onChange)=>{let i=0;const p=A.button('◀ Précédent',()=>go(i-1)),n=A.button('Suivant ▶',()=>go(i+1)),go=k=>{i=Math.max(0,Math.min(list.length-1,k));p.disabled=i==0;n.disabled=i==list.length-1;A.say('<b>Étape '+(i+1)+'/'+list.length+' · '+list[i].t+'</b><br>'+list[i].d);onChange&&onChange(i)};go(0);return{get i(){return i},go}};
 return A})();
