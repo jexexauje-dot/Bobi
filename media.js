@@ -186,17 +186,34 @@ async function phetCard(q, base) {
 /* ---------- GÉNÉRATION D'IMAGES (Gemini si disponible, sinon Pollinations, gratuit) ---------- */
 export const gimgs = new Map(); // id -> { buf, mime, t }
 const store = (map, v) => { const id = crypto.randomBytes(8).toString('hex'); map.set(id, { ...v, t: Date.now() }); if (map.size > 120) map.delete(map.keys().next().value); return id; };
+export const genLog = []; // derniers échecs de génération (visibles via /api/diag)
+const glog = s => { genLog.push(new Date().toISOString().slice(11, 19) + ' ' + s); if (genLog.length > 12) genLog.shift(); };
 async function genImage(prompt, KEY) {
   const P = String(prompt || '').slice(0, 500) + ', clear, high quality illustration';
-  if (KEY) { try {
-    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: AbortSignal.timeout(28000), headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: JSON.stringify({ contents: [{ parts: [{ text: P }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }) });
-    if (r.ok) { const j = await r.json(), part = (j.candidates?.[0]?.content?.parts || []).find(x => x.inlineData?.data); if (part) return { id: store(gimgs, { buf: Buffer.from(part.inlineData.data, 'base64'), mime: part.inlineData.mimeType || 'image/png' }), credit: 'Image générée par Gemini' }; }
-  } catch { } }
-  try {
-    const r = await fetch(`https://image.pollinations.ai/prompt/${enc(P)}?width=768&height=768&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`, { headers: UA, signal: AbortSignal.timeout(30000) });
+  const GK = process.env.GEMINI_API_KEY_IMAGE || KEY;
+  if (GK) for (const model of [...new Set([process.env.GEMINI_IMAGE_MODEL, 'gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp-image-generation'].filter(Boolean))]) { try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', signal: AbortSignal.timeout(28000), headers: { 'content-type': 'application/json', 'x-goog-api-key': GK }, body: JSON.stringify({ contents: [{ parts: [{ text: 'Generate an image: ' + P }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }) });
+    if (!r.ok) { glog(model + ' HTTP ' + r.status); continue; }
+    const j = await r.json(), part = (j.candidates?.[0]?.content?.parts || []).find(x => (x.inlineData || x.inline_data)?.data);
+    if (part) { const d = part.inlineData || part.inline_data; return { id: store(gimgs, { buf: Buffer.from(d.data, 'base64'), mime: d.mimeType || d.mime_type || 'image/png' }), credit: 'Image générée par Gemini' }; }
+    glog(model + ' réponse sans image');
+  } catch (e) { glog(model + ' ' + e.message); } }
+  const CFA = process.env.CLOUDFLARE_ACCOUNT_ID, CFT = process.env.CLOUDFLARE_API_TOKEN;
+  if (CFA && CFT) { try {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CFA}/ai/run/@cf/black-forest-labs/flux-1-schnell`, { method: 'POST', signal: AbortSignal.timeout(28000), headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + CFT }, body: JSON.stringify({ prompt: P, steps: 6 }) });
+    if (r.ok) { const j = await r.json(); if (j?.result?.image) return { id: store(gimgs, { buf: Buffer.from(j.result.image, 'base64'), mime: 'image/jpeg' }), credit: 'Image générée par IA (Cloudflare FLUX)' }; }
+    glog('cloudflare HTTP ' + r.status);
+  } catch (e) { glog('cloudflare ' + e.message); } }
+  if (process.env.HF_TOKEN) { try {
+    const r = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', { method: 'POST', signal: AbortSignal.timeout(30000), headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + process.env.HF_TOKEN }, body: JSON.stringify({ inputs: P }) });
+    const mime = r.headers.get('content-type') || ''; if (r.ok && /^image\//.test(mime)) { const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 2000) return { id: store(gimgs, { buf, mime }), credit: 'Image générée par IA (FLUX)' }; }
+    glog('huggingface HTTP ' + r.status);
+  } catch (e) { glog('huggingface ' + e.message); } }
+  for (const model of ['flux', 'turbo']) { try {
+    const r = await fetch(`https://image.pollinations.ai/prompt/${enc(P)}?width=768&height=768&nologo=true&model=${model}&seed=${Math.floor(Math.random() * 1e6)}`, { headers: UA, signal: AbortSignal.timeout(30000) });
     const mime = r.headers.get('content-type') || ''; if (r.ok && /^image\//.test(mime)) { const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 2000) return { id: store(gimgs, { buf, mime }), credit: 'Image générée par IA (Pollinations)' }; }
-  } catch { }
+    glog('pollinations ' + model + ' HTTP ' + r.status);
+  } catch (e) { glog('pollinations ' + model + ' ' + e.message); } }
   return undefined;
 }
 
@@ -220,14 +237,38 @@ export async function facts(q) {
   return out.join('\n');
 }
 
+
+/* ---------- CARTES DE SCHÉMAS (rendues par le navigateur avec des bibliothèques gratuites : KaTeX, Mermaid, Chart.js) ---------- */
+const stripFence = s => String(s || '').replace(/^\s*```[a-z]*\s*/i, '').replace(/\s*```\s*$/, '').trim();
+const vizBase = (m, kind, extra) => ({ type: 'viz', kind, title: String(m.title || '').slice(0, 100), caption: String(m.caption || '').slice(0, 200), ...extra });
+const vizJson = m => { try { return JSON.parse(stripFence(m.content)); } catch { return null; } };
+async function vizCard(m) {
+  const t = m.type;
+  if (t === 'formula') { const lines = stripFence(m.content).split('\n').map(l => l.trim()).filter(Boolean).slice(0, 8).map(l => l.slice(0, 300)); return lines.length ? vizBase(m, 'formula', { data: lines.join('\n') }) : undefined; }
+  if (t === 'diagram') { let c = stripFence(m.content).slice(0, 3000).replace(/^\s*click\s.*$/gim, '').replace(/<script|javascript:/gi, ''); return /^\s*(%%.*\n)*\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|gitGraph)/i.test(c) ? vizBase(m, 'diagram', { data: c }) : undefined; }
+  if (t === 'chartjs') { const j = vizJson(m); if (!j) return undefined; const type = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].includes(j.type) ? j.type : 'bar';
+    const labels = (Array.isArray(j.labels) ? j.labels : []).slice(0, 30).map(x => String(x).slice(0, 30)), datasets = (Array.isArray(j.datasets) ? j.datasets : []).slice(0, 4).map(d => ({ label: String(d?.label || '').slice(0, 40), data: (Array.isArray(d?.data) ? d.data : []).slice(0, 30).map(Number).filter(Number.isFinite) })).filter(d => d.data.length);
+    return datasets.length ? vizBase(m, 'chartjs', { data: JSON.stringify({ type, labels, datasets, xTitle: String(j.xTitle || '').slice(0, 40), yTitle: String(j.yTitle || '').slice(0, 40) }) }) : undefined; }
+  if (t === 'svg') { let s = stripFence(m.content).slice(0, 16000); const i = s.search(/<svg/i); if (i < 0) return undefined; s = s.slice(i).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '').replace(/<image[^>]*>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/(xlink:)?href\s*=\s*(["'])(?!#)[^"']*\2/gi, '');
+    if (!/xmlns=/.test(s)) s = s.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"'); return vizBase(m, 'svg', { data: s }); }
+  if (t === 'table') { const j = vizJson(m); if (!j || !Array.isArray(j.rows)) return undefined; const cell = c => String(c ?? '').slice(0, 80);
+    return vizBase(m, 'table', { data: JSON.stringify({ headers: (Array.isArray(j.headers) ? j.headers : []).slice(0, 8).map(cell), rows: j.rows.slice(0, 25).filter(Array.isArray).map(r => r.slice(0, 8).map(cell)) }) }); }
+  if (t === 'molecule') { const q = String(m.query || m.title || '').trim().slice(0, 80); if (!q) return undefined;
+    for (const name of [q, q.replace(/\s*\(.*?\)\s*/g, '').trim()]) { const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${enc(name)}/PNG?image_size=large`;
+      try { const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(7000) }); if (r.ok && /image\//.test(r.headers.get('content-type') || '')) return vizBase(m, 'molecule', { url, credit: 'PubChem (NIH)' }); } catch { } }
+    return undefined; }
+  return undefined;
+}
+
 /* ---------- POINT D'ENTRÉE POUR LES TYPES SPÉCIAUX ---------- */
 export async function special(m, { emit = () => {}, KEY = '' } = {}) {
   const base = { title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) }, q = String(m.query || m.title || '').slice(0, 200);
   if (m.type === 'map') { emit({ icon: '🗺️', label: 'Je cherche sur la carte : ' + q.slice(0, 40) }); return q ? await mapCard(q, base).catch(() => undefined) : undefined; }
   if (m.type === 'phet') { emit({ icon: '🧪', label: 'Je cherche une simulation PhET' }); return q ? await phetCard(q, base).catch(() => undefined) : undefined; }
   if (m.type === 'genimage') { emit({ icon: '🎨', label: 'Je génère une image' }); const g = q ? await genImage(q, KEY) : undefined; return g ? { ...base, type: 'image', url: '/api/gimg/' + g.id, credit: g.credit, caption: base.caption } : undefined; }
+  if (['formula', 'diagram', 'chartjs', 'svg', 'table', 'molecule'].includes(m.type)) { emit({ icon: '📐', label: 'Je prépare un schéma' }); return await vizCard(m).catch(() => undefined); }
   if (m.type === 'filegen') { emit({ icon: '📄', label: 'Je prépare le fichier' }); return genFile(m, base); }
   return undefined;
 }
-export const SPECIAL_TYPES = ['map', 'phet', 'genimage', 'filegen'];
+export const SPECIAL_TYPES = ['map', 'phet', 'genimage', 'filegen', 'formula', 'diagram', 'chartjs', 'svg', 'table', 'molecule'];
 export { genImage };

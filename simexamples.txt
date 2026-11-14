@@ -1,37 +1,58 @@
-EXEMPLE DE FINITION A (sujet : forces sur un plan incliné — ne PAS réutiliser pour un autre sujet) :
+EXEMPLE DE FINITION 1 (sujet : addition de fractions, vraies fractions empilées avec Sim.pie / Sim.math ; ne PAS réutiliser pour un autre sujet) :
 <script>
-let ang=30,mu=.2,s=0,v=0;
-Sim.slider('Angle',0,60,30,1,a=>{ang=a;s=0;v=0},'°');
-Sim.slider('Frottement μ',0,1,.2,.05,m=>{mu=m;s=0;v=0});
-Sim.button('↻ Relancer',()=>{s=0;v=0});
-Sim.say('<b>Forces sur la bille (m = 1 kg, g = 9,8)</b><br>Poids <b style="color:#ff5d5d">P</b> vertical vers le bas, réaction <b style="color:#4cd964">N</b> perpendiculaire au plan, frottement <b style="color:#ffa63d">f</b> le long du plan, opposé au mouvement, et la somme <b style="color:#b388ff">ΣF</b>.');
+const C=Sim.C;
+const st=Sim.steps([
+ {t:'Deux fractions',d:'On veut calculer {1/2} + {1/3}. Les parts n’ont pas la même taille : on ne peut pas encore les additionner.'},
+ {t:'Même dénominateur',d:'Le plus petit multiple commun de 2 et 3 est 6. Donc {1/2} = {3/6} et {1/3} = {2/6}.'},
+ {t:'On additionne les parts',d:'{3/6} + {2/6} = {5/6} : on additionne les numérateurs, le dénominateur ne change pas.'}]);
+let a=2,b=3,fa=1,fb=1,ga=0;
 Sim.stage((x,W,H,dt)=>{
- const inc=Sim.incline(x,W*.1,H-28,W*.78,ang),t=ang*Math.PI/180,g=9.8,k=7,r=15;
- const tmax=inc.len-r*2,sl=g*Math.sin(t),Nn=g*Math.cos(t),moving=mu*Nn<sl-1e-6||v>0&&s<tmax;
- const a=mu*Nn<sl?sl-mu*Nn:0; if(a>0){v+=a*dt*6;s+=v*dt*6; if(s>tmax){s=0;v=0}} else {v=0}
- const c=inc.pos(s+r+4,r),px=c[0],py=c[1];Sim.ball(x,px,py,r,'#4aa3ff');
- const fN=Nn*k,fP=g*k,ff=(a>0?mu*Nn:sl)*k;
- Sim.arrow(x,px,py,0,fP,'#ff5d5d','P = mg');
- Sim.arrow(x,px,py,inc.n[0]*fN,inc.n[1]*fN,'#4cd964','N');
- if(ff>1)Sim.arrow(x,px,py,inc.u[0]*ff,inc.u[1]*ff,'#ffa63d','f');
- const Rx=inc.n[0]*fN+inc.u[0]*ff,Ry=fP+inc.n[1]*fN+inc.u[1]*ff;
- if(a>0)Sim.arrow(x,px+0,py,Rx,Ry,'#b388ff','ΣF',{dash:1}); else Sim.text(x,'ΣF = 0 : la bille reste immobile',W/2,22,{color:'#b388ff',bold:1});
- Sim.text(x,'f max = μN = '+(mu*Nn).toFixed(1)+' N  ·  P∥ = '+sl.toFixed(1)+' N',W/2,H-8,{size:12,color:'#9aa0aa'});
-},{height:320});
+ const i=st.i,r=Math.min(W/8.8,H/3.4),cy=H*.40,k=Math.min(1,dt*5);
+ const tA=i==0?[2,1]:[6,3],tB=i==0?[3,1]:[6,2];
+ a=Sim.lerp(a,tA[0],k);b=Sim.lerp(b,tB[0],k);fa=Sim.lerp(fa,tA[1],k);fb=Sim.lerp(fb,tB[1],k);ga=Sim.lerp(ga,i==2?5:0,k);
+ Sim.pie(x,W*.2,cy,r,Math.round(a),fa*Math.round(a)/a,C.accent);
+ Sim.pie(x,W*.5,cy,r,Math.round(b),fb*Math.round(b)/b,C.blue);
+ Sim.text(x,'+',W*.35,cy,{size:28,color:C.mute});
+ if(i==2){Sim.text(x,'=',W*.65,cy,{size:28,color:C.mute});Sim.pie(x,W*.8,cy,r,6,ga,C.green);Sim.math(x,'5/6',W*.8,H*.86,{size:26,color:C.green})}
+ Sim.math(x,i==0?'1/2':'3/6',W*.2,H*.86,{size:26,color:C.accent});
+ Sim.math(x,i==0?'1/3':'2/6',W*.5,H*.86,{size:26,color:C.blue});
+},{height:280});
 </script>
 
-EXEMPLE DE FINITION B (sujet : nomenclature du propan-1-ol — ne PAS réutiliser pour un autre sujet) :
+EXEMPLE DE FINITION 2 (sujet : nomenclature du propan-1-ol, pas à pas ; ne PAS réutiliser pour un autre sujet) :
 <script>
-const at=[{s:'C',x:.22,y:.55,c:'#555'},{s:'C',x:.42,y:.4,c:'#555'},{s:'C',x:.62,y:.55,c:'#555'},{s:'O',x:.82,y:.4,c:'#e53935'},{s:'H',x:.94,y:.52,c:'#bbbbbb'}],bd=[[0,1],[1,2],[2,3],[3,4]];
+const C=Sim.C;
+const at=[{s:'C',x:.2,y:.62,c:'#6b7280'},{s:'C',x:.4,y:.38,c:'#6b7280'},{s:'C',x:.6,y:.62,c:'#6b7280'},{s:'O',x:.8,y:.38,c:C.red},{s:'H',x:.92,y:.6,c:'#9ca3af'}],bd=[[0,1],[1,2],[2,3],[3,4]];
 const st=Sim.steps([
  {t:'Repérer la chaîne carbonée',d:'On compte les C de la plus longue chaîne : <b>3 C → « propan- »</b>.'},
  {t:'Trouver le groupe caractéristique',d:'Un O lié à un H en bout de chaîne : c’est un <b>hydroxyle –OH</b> → famille des <b>alcools</b>, suffixe <b>« -ol »</b>.'},
  {t:'Numéroter la chaîne',d:'On numérote pour que le C portant –OH ait le plus petit numéro : le –OH est sur le <b>C n°1</b> (en partant de la droite).'},
  {t:'Écrire le nom',d:'propan + 1 + ol = <b>propan-1-ol</b>. Essaie avec un autre exemple !'}]);
-Sim.stage((x,W,H)=>{const P=a=>[a.x*W,a.y*H*.9+10],i=st.i;
- bd.forEach(([a,b])=>{const A=P(at[a]),B=P(at[b]);Sim.bond(x,A[0],A[1],B[0],B[1],1,(i==0&&b<3)||(i>=1&&a>=2)?'#e8a317':'#cfd3da')});
- at.forEach((a,j)=>{const p=P(a);if((i==0&&j<3)||(i>=1&&j>=3)){x.save();x.strokeStyle='#e8a317';x.lineWidth=3;x.beginPath();x.arc(p[0],p[1],24,0,7);x.stroke();x.restore()}Sim.atom(x,p[0],p[1],a.s,a.c,17)});
- if(i>=2)[2,1,0].forEach((j,n)=>{const p=P(at[j]);Sim.text(x,String(n+1),p[0],p[1]-34,{color:'#e8a317',bold:1,size:18})});
- if(i==3)Sim.text(x,'propan-1-ol',W/2,H-24,{size:24,bold:1,color:'#e8a317'});
+let pulse=0;
+Sim.stage((x,W,H,dt,t)=>{const P=a=>[a.x*W,a.y*H*.85+8],i=st.i;pulse=t;
+ bd.forEach(([a,b])=>{const A=P(at[a]),B=P(at[b]);Sim.bond(x,A[0],A[1],B[0],B[1],1,(i==0&&b<3)||(i>=1&&a>=2)?C.accent:C.mute)});
+ at.forEach((a,j)=>{const p=P(a);if((i==0&&j<3)||(i>=1&&j>=3)){x.save();x.strokeStyle=C.accent;x.globalAlpha=.5+.5*Math.sin(pulse*4);x.lineWidth=2.5;x.beginPath();x.arc(p[0],p[1],25,0,7);x.stroke();x.restore()}Sim.atom(x,p[0],p[1],a.s,a.c,17)});
+ if(i>=2)[2,1,0].forEach((j,n)=>{const p=P(at[j]);Sim.text(x,String(n+1),p[0],p[1]-34,{color:C.accent,bold:1,size:18,mono:1})});
+ if(i==3)Sim.text(x,'propan-1-ol',W/2,H-22,{size:24,bold:1,color:C.accent});
 },{height:260});
+</script>
+
+EXEMPLE DE FINITION 3 (sujet : forces sur un plan incliné ; ne PAS réutiliser pour un autre sujet) :
+<script>
+const C=Sim.C;let ang=30,mu=.2,s=0,v=0;
+Sim.slider('Angle',0,60,30,1,a=>{ang=a;s=0;v=0},'°');
+Sim.slider('Frottement μ',0,1,.2,.05,m=>{mu=m;s=0;v=0});
+Sim.button('↻ Relancer',()=>{s=0;v=0});
+Sim.say('Forces sur la bille : le poids <b style="color:'+C.red+'">P</b> (vertical), la réaction <b style="color:'+C.green+'">N</b> (perpendiculaire au plan), le frottement <b style="color:'+C.yellow+'">f</b> (le long du plan, opposé au mouvement) et la somme <b style="color:'+C.violet+'">ΣF</b>.');
+Sim.stage((x,W,H,dt)=>{
+ const inc=Sim.incline(x,W*.1,H-26,W*.78,ang),t=ang*Math.PI/180,g=9.8,k=7,r=14,tmax=inc.len-r*2,sl=g*Math.sin(t),Nn=g*Math.cos(t),a=mu*Nn<sl?sl-mu*Nn:0;
+ if(a>0){v+=a*dt*6;s+=v*dt*6;if(s>tmax){s=0;v=0}}else v=0;
+ const c=inc.pos(s+r+4,r),px=c[0],py=c[1];Sim.ball(x,px,py,r,C.blue);
+ const fN=Nn*k,fP=g*k,ff=(a>0?mu*Nn:sl)*k;
+ Sim.arrow(x,px,py,0,fP,C.red,'P');Sim.arrow(x,px,py,inc.n[0]*fN,inc.n[1]*fN,C.green,'N');
+ if(ff>1)Sim.arrow(x,px,py,inc.u[0]*ff,inc.u[1]*ff,C.yellow,'f');
+ const Rx=inc.n[0]*fN+inc.u[0]*ff,Ry=fP+inc.n[1]*fN+inc.u[1]*ff;
+ if(a>0)Sim.arrow(x,px,py,Rx,Ry,C.violet,'ΣF',{dash:1});else Sim.text(x,'ΣF = 0 : la bille reste immobile',W/2,20,{color:C.violet,bold:1,mono:1,size:12});
+ Sim.text(x,'f max = μN = '+(mu*Nn).toFixed(1)+' N   ·   P∥ = '+sl.toFixed(1)+' N',W/2,H-6,{size:11,color:C.mute,mono:1});
+},{height:320});
 </script>

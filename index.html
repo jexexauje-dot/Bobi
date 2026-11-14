@@ -22,7 +22,7 @@
 .thinkrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:6px 0 14px}.thinkrow .dots{padding:0}
 .tlabel{font-family:var(--mono);font-size:12.5px;color:var(--mute)}.tlabel b{color:var(--accent);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
 @media (prefers-reduced-motion:reduce){.tfx .orb,.tfx .cr,.tfx .ti,.cstage.thinking::before,.cstage.talking::before,.cstage.thinking::after{animation:none}#c3d,.flat{transition:none}}
-</style><style>.filec{display:flex;align-items:center;gap:14px;margin:10px 0;padding:14px 16px;border-radius:18px;background:#1c1c1c;color:#f2f2f2;text-decoration:none;max-width:420px;cursor:pointer}.filec:active{background:#262626}.filec .fi{flex:none;width:48px;height:48px;border-radius:12px;background:#2b2b2b;display:grid;place-items:center;font-size:20px;color:#aaa;font-family:monospace}.filec .ft{flex:1;min-width:0;display:flex;flex-direction:column}.filec b{font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.filec i{font-style:normal;font-size:14px;color:#9a9a9a}.filec .fd{flex:none;font-size:20px;color:#e8a317}</style><style>.simc{margin:10px 0;border-radius:18px;overflow:hidden;background:#14161a;color:#f2f2f2;max-width:520px;border:1px solid #2a2d33}.simc .sh{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1c1f24;font-size:14px}.simc .st1{color:#e8a317;font-weight:700;white-space:nowrap}.simc b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.simc .sr{border:0;background:#2b2e34;color:#fff;border-radius:10px;width:34px;height:34px;font-size:18px;cursor:pointer}.simc iframe{display:block;width:100%;height:380px;border:0;background:#14161a}</style></head><body>
+</style><style>.filec{display:flex;align-items:center;gap:14px;margin:10px 0;padding:14px 16px;border-radius:18px;background:#1c1c1c;color:#f2f2f2;text-decoration:none;max-width:420px;cursor:pointer}.filec:active{background:#262626}.filec .fi{flex:none;width:48px;height:48px;border-radius:12px;background:#2b2b2b;display:grid;place-items:center;font-size:20px;color:#aaa;font-family:monospace}.filec .ft{flex:1;min-width:0;display:flex;flex-direction:column}.filec b{font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.filec i{font-style:normal;font-size:14px;color:#9a9a9a}.filec .fd{flex:none;font-size:20px;color:#e8a317}</style><style>.simc{margin:10px 0;border-radius:18px;overflow:hidden;background:#14161a;color:#f2f2f2;max-width:520px;border:1px solid #2a2d33}.simc .sh{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1c1f24;font-size:14px}.simc .st1{color:#e8a317;font-weight:700;white-space:nowrap}.simc b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.simc .sr{border:0;background:#2b2e34;color:#fff;border-radius:10px;width:34px;height:34px;font-size:18px;cursor:pointer}.simc iframe{display:block;width:100%;height:380px;border:0;background:#14161a}.frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;line-height:1.05;font-size:.82em;margin:0 .12em}.frac i{font-style:normal;padding:0 .18em}.frac i:first-child{border-bottom:1.5px solid currentColor}.simc.viz iframe{height:200px}</style></head><body>
 <title>Bobi</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -862,6 +862,7 @@ const adaptMedia = m => {
   if (m.type === 'file' && /^\/api\/(dl\?|gf\/)/.test(m.dl || '')) return { type: 'file', title: m.title, author: m.author, format: m.format, dl: m.dl, page: m.page, credit: m.credit };
   if (m.type === 'music' && (m.audio || m.embed)) return { type: 'music', title: m.title, artist: m.artist, cover: m.cover, audio: m.audio, embed: m.embed, page: m.page, credit: m.credit };
   if (m.type === 'video' && (m.embed || m.file)) return { type: 'video', title: m.title, caption: m.caption, embed: m.embed, file: m.file, mime: m.mime, poster: m.poster, credit: m.credit, page: m.page };
+  if (m.type === 'viz' && ['formula', 'diagram', 'chartjs', 'svg', 'table', 'molecule'].includes(m.kind) && ((typeof m.data === 'string' && m.data.length < 20000) || /^https:\/\/pubchem\.ncbi\.nlm\.nih\.gov\//.test(m.url || ''))) return { type: 'viz', kind: m.kind, title: m.title, data: m.data, url: m.url, caption: m.caption, credit: m.credit };
   if ((m.type === 'phet' || m.type === 'map') && /^https:\/\/(phet\.colorado\.edu|www\.openstreetmap\.org)\//.test(m.src || '')) return { type: 'embedcard', kind: m.type, title: m.title, src: m.src, credit: m.credit, caption: m.caption };
   if (m.type === 'sim' && typeof m.html === 'string' && m.html.length > 300) return { type: 'sim', title: m.title, html: m.html };
   if (m.type === 'video' && (m.embed || m.search)) return { type: 'link', kind: 'Vidéo', title: m.title, caption: m.caption, url: m.search || m.embed, label: 'Voir la vidéo' };
@@ -1118,17 +1119,41 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     if (m.credit) { const k = document.createElement('div'); k.className = 'sh'; k.style.cssText = 'font-size:12px;color:#9aa0aa;padding:6px 14px'; k.textContent = S(m.credit, 90); c.appendChild(k); }
     return c;
   }
+  function themeOf() { const cs = getComputedStyle(document.documentElement), g = k => cs.getPropertyValue(k).trim(), sf = g('--surface') || '#161618'; return { ink: g('--ink') || '#f4f4f5', mute: g('--mute') || '#8e8e94', line: g('--line') || 'rgba(255,255,255,.12)', line2: g('--line2') || 'rgba(255,255,255,.34)', accent: g('--accent') || '#ff8a2b', surface: sf, dark: /^#(0|1)/i.test(sf) ? 1 : 0 }; }
+  function themed(html) { return String(html).replace('<body>', '<body><script>window.BOBI_THEME=' + JSON.stringify(themeOf()).replace(/</g, '\\u003c') + '</scr' + 'ipt>'); }
+  function autoH(f, min, max) { const on = ev => { if (!document.contains(f)) { removeEventListener('message', on); return; } if (ev.source === f.contentWindow && ev.data && ev.data.bobiH) f.style.height = Math.max(min, Math.min(max, +ev.data.bobiH || min)) + 'px'; }; addEventListener('message', on); }
+  function vizDoc(m) {
+    const T = themeOf(), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])), J = o => JSON.stringify(o).replace(/</g, '\\u003c'), CL = '</scr' + 'ipt>';
+    const PAL = [T.accent, '#4c8dff', '#30a46c', '#8b7cf6', '#e5484d', '#2bb3a3', '#f5b83d'];
+    const head = '<meta charset="utf-8"><style>html,body{margin:0;background:transparent;color:' + T.ink + ';font:15px/1.5 system-ui,sans-serif}body{padding:12px 16px 14px;overflow:hidden}img,svg{max-width:100%;height:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border-bottom:1px solid ' + T.line2 + ';padding:7px 10px;text-align:left}th{color:' + T.accent + ';font:600 12px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}.f{margin:6px 0;text-align:center;font-size:1.25em;overflow-x:auto}.wh{background:#fff;border-radius:12px;padding:8px;text-align:center}</style><script>const rep=()=>parent.postMessage({bobiH:document.body.scrollHeight+4},"*");addEventListener("load",()=>{rep();setTimeout(rep,700);setTimeout(rep,2000)});try{new ResizeObserver(rep).observe(document.body)}catch(e){}' + CL;
+    let body = '';
+    if (m.kind === 'formula') body = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"><div id="o"></div><script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js">' + CL + '<script>const L=' + J(String(m.data).split('\n')) + ';L.forEach(l=>{const d=document.createElement("div");d.className="f";document.getElementById("o").appendChild(d);if(window.katex){try{katex.render(l,d,{displayMode:true,throwOnError:false})}catch(e){d.textContent=l}}else d.textContent=l});rep()' + CL;
+    else if (m.kind === 'diagram') body = '<pre class="mermaid" style="margin:0;background:transparent">' + esc(m.data) + '</pre><script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js">' + CL + '<script>try{mermaid.initialize({startOnLoad:false,theme:' + (T.dark ? '"dark"' : '"neutral"') + ',securityLevel:"strict",fontFamily:"system-ui"});mermaid.run().then(rep).catch(()=>{document.body.insertAdjacentHTML("beforeend","<p style=color:#e5484d>Schéma invalide</p>");rep()})}catch(e){}' + CL;
+    else if (m.kind === 'chartjs') { let D = {}; try { D = JSON.parse(m.data); } catch (e) { } body = '<canvas id="c"></canvas><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js">' + CL + '<script>try{const D=' + J(D) + ',P=' + J(PAL) + ';Chart.defaults.color=' + J(T.mute) + ';Chart.defaults.borderColor=' + J(T.line) + ';const pie=/pie|doughnut|polarArea/.test(D.type);D.datasets.forEach((d,i)=>{d.backgroundColor=pie?D.labels.map((_,k)=>P[k%P.length]):P[i%P.length]+(D.type==="line"?"33":"cc");d.borderColor=pie?"transparent":P[i%P.length];d.borderWidth=2;d.tension=.3});new Chart(document.getElementById("c"),{type:D.type,data:{labels:D.labels,datasets:D.datasets},options:{responsive:true,animation:{duration:900},plugins:{legend:{display:D.datasets.length>1||pie}},scales:pie||D.type==="radar"?{}:{x:{title:{display:!!D.xTitle,text:D.xTitle}},y:{title:{display:!!D.yTitle,text:D.yTitle},beginAtZero:true}}}});setTimeout(rep,1000)}catch(e){document.body.insertAdjacentHTML("beforeend","<p>Graphique indisponible</p>");rep()}' + CL; }
+    else if (m.kind === 'svg') { let b64 = ''; try { b64 = btoa(unescape(encodeURIComponent(m.data))); } catch (e) { } body = '<div class="wh"><img alt="' + esc(S(m.title, 80)) + '" style="width:100%;max-height:520px" src="data:image/svg+xml;base64,' + b64 + '"></div>'; }
+    else if (m.kind === 'table') { let D = { headers: [], rows: [] }; try { D = JSON.parse(m.data); } catch (e) { } body = '<div style="overflow-x:auto"><table>' + (D.headers && D.headers.length ? '<tr>' + D.headers.map(x => '<th>' + esc(x) + '</th>').join('') + '</tr>' : '') + (D.rows || []).map(r => '<tr>' + r.map(x => '<td>' + esc(x) + '</td>').join('') + '</tr>').join('') + '</table></div>'; }
+    else if (m.kind === 'molecule') body = '<div class="wh"><img alt="' + esc(S(m.title, 80)) + '" style="max-height:340px" src="' + esc(m.url) + '"></div>';
+    return '<!doctype html><html><head>' + head + '</head><body>' + body + '</body></html>';
+  }
+  function vizCard(m) {
+    const TAG = { formula: '∑ Formule', diagram: '🔷 Schéma', chartjs: '📊 Graphique', svg: '✏️ Dessin', table: '▦ Tableau', molecule: '⚛ Molécule' };
+    const c = document.createElement('div'); c.className = 'simc viz'; c.innerHTML = '<div class="sh"><span class="st1"></span><b></b></div>';
+    c.querySelector('.st1').textContent = TAG[m.kind] || 'Schéma'; c.querySelector('b').textContent = S(m.title, 70);
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Schéma'); f.style.height = '200px'; f.srcdoc = vizDoc(m); autoH(f, 90, 760); c.appendChild(f);
+    const note = [m.caption, m.credit].filter(Boolean).map(x => S(x, 140)).join(' · '); if (note) { const k = document.createElement('div'); k.className = 'sh'; k.style.cssText = 'font-size:12px;color:var(--mute,#9aa0aa);padding:6px 14px'; k.textContent = note; c.appendChild(k); }
+    return c;
+  }
   function simCard(m) {
     const c = document.createElement('div'); c.className = 'simc';
     c.innerHTML = '<div class="sh"><span class="st1">🧪 Simulation</span><b></b><button type="button" class="sr" aria-label="Relancer la simulation">↻</button></div>';
     c.querySelector('b').textContent = S(m.title, 70);
-    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.srcdoc = m.html; c.appendChild(f);
-    c.querySelector('.sr').addEventListener('click', () => { f.srcdoc = m.html; });
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.srcdoc = themed(m.html); autoH(f, 220, 720); c.appendChild(f);
+    c.querySelector('.sr').addEventListener('click', () => { f.srcdoc = themed(m.html); });
     let fixes = 0; const lab = c.querySelector('.st1'), onMsg = ev => {
       if (!document.contains(c)) { removeEventListener('message', onMsg); return; }
       if (ev.source !== f.contentWindow || !ev.data || ev.data.bobiSim !== 'error' || fixes >= 1) return; fixes++; lab.textContent = '🛠 Je répare…';
       fetch('/api/simfix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: m.html, error: String(ev.data.msg || '').slice(0, 250), title: m.title }) })
-        .then(r => r.ok ? r.json() : Promise.reject()).then(j => { if (j && j.html) { m.html = j.html; f.srcdoc = j.html; } lab.textContent = '🧪 Simulation'; }).catch(() => { lab.textContent = '🧪 Simulation'; });
+        .then(r => r.ok ? r.json() : Promise.reject()).then(j => { if (j && j.html) { m.html = j.html; f.srcdoc = themed(j.html); } lab.textContent = '🧪 Simulation'; }).catch(() => { lab.textContent = '🧪 Simulation'; });
     }; addEventListener('message', onMsg);
     return c;
   }
@@ -1144,16 +1169,21 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function presentMedia(m, block) {
     if (!m) return false;
     if (ORB_TYPES.includes(m.type)) { if (showOrb(m)) { fx('fig'); return true; } return false; }
+    if (m.type === 'viz' && m.kind) { block.appendChild(vizCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     if (m.type === 'embedcard' && m.src) { block.appendChild(embedCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     if (m.type === 'sim' && m.html) { block.appendChild(simCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     if (m.type === 'file' && /^\/api\/(dl\?|gf\/)/.test(m.dl || '')) { const c = fileCard(m); block.appendChild(c); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     const fig = buildFigure(m); if (fig) { block.appendChild(fig); fx('fig'); follow(); setTimeout(follow, 350); return true; } return false;
   }
 
+  function fillWord(s, w) { // fractions « 3/4 » affichées en vraie fraction empilée
+    const m = /^(\(?)(\d{1,4})\/(\d{1,4})([.,;:!?)]*)$/.exec(w); if (!m) { s.textContent = w; return; }
+    if (m[1]) s.appendChild(document.createTextNode(m[1])); const fr = document.createElement('span'); fr.className = 'frac'; const n = document.createElement('i'), d = document.createElement('i'); n.textContent = m[2]; d.textContent = m[3]; fr.append(n, d); s.appendChild(fr); if (m[4]) s.appendChild(document.createTextNode(m[4]));
+  }
   async function speak(el, text, my, opts = {}) {
     const words = text.split(/\s+/).filter(Boolean);
     el.textContent = '';
-    const spans = words.map((w, i) => { const s = document.createElement('span'); s.className = 'w'; s.textContent = w; el.appendChild(s); if (i < words.length - 1) el.appendChild(document.createTextNode(' ')); return s; });
+    const spans = words.map((w, i) => { const s = document.createElement('span'); s.className = 'w'; fillWord(s, w); el.appendChild(s); if (i < words.length - 1) el.appendChild(document.createTextNode(' ')); return s; });
     if (opts.quiet) { spans.forEach(s => s.classList.add('in')); return; }
     B.talking = true; setStatus('te parle', 'talking');
     let prev = null, shown = -1, offs = [], pos = 0;
