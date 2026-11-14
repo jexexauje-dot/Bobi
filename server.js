@@ -129,7 +129,7 @@ Exemples de FINITION uniquement :
 async function resolveMediaCore(m, emit = () => {}, skip = []) {
   const SK = (skip || []).slice(-40), sk = SK.length ? '|' + crypto.createHash('sha1').update(SK.join('|')).digest('hex').slice(0, 8) : '';
   if (!m || !MEDIA.includes(m.type)) return undefined; const base = { type: m.type, title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) };
-  if (m.type === 'sim') { emit({ icon: '🧪', label: 'Je construis une simulation : ' + String(m.title || '').slice(0, 40) }); const h = await cached('sim:' + String(m.title) + '|' + String(m.query), () => genSim(String(m.title || m.query || '').slice(0, 120), String(m.query || m.title || '').slice(0, 400))); return h ? { ...base, html: h } : undefined; }
+  if (m.type === 'sim') { emit({ icon: '🧪', label: 'Je construis une simulation : ' + String(m.title || '').slice(0, 40), gen: 'sim' }); const h = await cached('sim:' + String(m.title) + '|' + String(m.query), () => genSim(String(m.title || m.query || '').slice(0, 120), String(m.query || m.title || '').slice(0, 400))); return h ? { ...base, html: h } : undefined; }
   if (m.type === 'image') emit({ icon: '🖼️', label: 'Je cherche une image : ' + String(m.query || '').slice(0, 40) });
   else if (m.type === 'video') emit({ icon: '▶️', label: 'Je cherche une vidéo sur le sujet' });
   else if (m.type === 'anim') emit({ icon: '🎬', label: 'Je prépare une animation' });
@@ -374,7 +374,7 @@ app.post('/api/chat', async (req, res) => {
     emit({ icon: '📖', label: 'Je lis ta question' });
     const lastSim = lastSimBy.get(id);
     if (lastSim && Date.now() - lastSim.t < 6 * 36e5 && /(modifi|ajout|rajout|enl[eè]v|retir|supprim|corrig|am[eé]lior|chang|remplac|rends|plus (grand|petit|gros|rapide|lent|clair|visible|d[ée]taill)|moins|il manque|manque)/i.test(text) && !/(nouvelle|autre) simulation|simulation (sur|de|du|des|d')/i.test(text)) {
-      emit({ icon: '🧪', label: 'Je modifie la simulation' });
+      emit({ icon: '🧪', label: 'Je modifie la simulation', gen: 'sim' });
       const h = await genSim(lastSim.title, text, lastSim.code);
       if (h) { lastSimBy.set(id, { ...lastSim, code: simCode(h), t: Date.now() });
         const nb = { say: 'Voilà, j\'ai modifié la simulation comme tu l\'as demandé ! Dis-moi si tu veux encore l\'ajuster.', emotion: 'proud', gesture: 'present', intensity: .7, look: 'media', media: { type: 'sim', title: lastSim.title, caption: '', html: h } };

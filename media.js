@@ -265,7 +265,7 @@ export async function special(m, { emit = () => {}, KEY = '' } = {}) {
   const base = { title: String(m.title || '').slice(0, 120), caption: String(m.caption || '').slice(0, 200) }, q = String(m.query || m.title || '').slice(0, 200);
   if (m.type === 'map') { emit({ icon: '🗺️', label: 'Je cherche sur la carte : ' + q.slice(0, 40) }); return q ? await mapCard(q, base).catch(() => undefined) : undefined; }
   if (m.type === 'phet') { emit({ icon: '🧪', label: 'Je cherche une simulation PhET' }); return q ? await phetCard(q, base).catch(() => undefined) : undefined; }
-  if (m.type === 'genimage') { emit({ icon: '🎨', label: 'Je génère une image' }); const g = q ? await genImage(q, KEY) : undefined; return g ? { ...base, type: 'image', url: '/api/gimg/' + g.id, credit: g.credit, caption: base.caption } : undefined; }
+  if (m.type === 'genimage') { emit({ icon: '🎨', label: 'Je génère ton image…', gen: 'image' }); const g = q ? await genImage(q, KEY) : undefined; return g ? { ...base, type: 'image', url: '/api/gimg/' + g.id, credit: g.credit, caption: base.caption, generated: true } : undefined; }
   if (['formula', 'diagram', 'chartjs', 'svg', 'table', 'molecule'].includes(m.type)) { emit({ icon: '📐', label: 'Je prépare un schéma' }); return await vizCard(m).catch(() => undefined); }
   if (m.type === 'filegen') { emit({ icon: '📄', label: 'Je prépare le fichier' }); return genFile(m, base); }
   return undefined;
