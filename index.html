@@ -859,9 +859,10 @@ const adaptMedia = m => {
   if (SCENES[m.type]) return m;
   if (m.type === 'chart' && m.chart && Array.isArray(m.chart.labels)) return { type: 'bars', title: m.title, caption: m.caption, items: m.chart.labels.map((l, i) => ({ label: l, value: m.chart.values[i] })) };
   if (m.type === 'image' && m.url) return { type: 'image', title: m.title, caption: m.caption, url: m.url, credit: m.credit, page: m.page };
-  if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) return { type: 'file', title: m.title, author: m.author, format: m.format, dl: m.dl, page: m.page, credit: m.credit };
+  if (m.type === 'file' && /^\/api\/(dl\?|gf\/)/.test(m.dl || '')) return { type: 'file', title: m.title, author: m.author, format: m.format, dl: m.dl, page: m.page, credit: m.credit };
   if (m.type === 'music' && (m.audio || m.embed)) return { type: 'music', title: m.title, artist: m.artist, cover: m.cover, audio: m.audio, embed: m.embed, page: m.page, credit: m.credit };
   if (m.type === 'video' && (m.embed || m.file)) return { type: 'video', title: m.title, caption: m.caption, embed: m.embed, file: m.file, mime: m.mime, poster: m.poster, credit: m.credit, page: m.page };
+  if ((m.type === 'phet' || m.type === 'map') && /^https:\/\/(phet\.colorado\.edu|www\.openstreetmap\.org)\//.test(m.src || '')) return { type: 'embedcard', kind: m.type, title: m.title, src: m.src, credit: m.credit, caption: m.caption };
   if (m.type === 'sim' && typeof m.html === 'string' && m.html.length > 300) return { type: 'sim', title: m.title, html: m.html };
   if (m.type === 'video' && (m.embed || m.search)) return { type: 'link', kind: 'Vidéo', title: m.title, caption: m.caption, url: m.search || m.embed, label: 'Voir la vidéo' };
   if (m.type === 'site' && m.url) return { type: 'link', kind: 'Site', title: m.title || m.domain, caption: m.caption, url: m.url, label: 'Ouvrir ' + (m.domain || 'le site') };
@@ -1086,11 +1087,12 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
     const o = ensureOrb(); clearTimeout(orbTimer); stopAnims(); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } o.innerHTML = ''; delete o.dataset.music; o.classList.toggle('wide', m.type === 'video');
     const cap = t => { if (!t) return; const c = document.createElement('div'); c.className = 'cap'; c.textContent = S(t, 90); o.appendChild(c); };
     let ok = false;
-    if (m.type === 'image' && /^https:\/\//.test(m.url || '')) { const im = new Image(); im.alt = S(m.title, 80); im.referrerPolicy = 'no-referrer'; im.onerror = () => { if (o.contains(im)) hideOrb(); }; im.src = m.url; o.appendChild(im); cap(m.credit ? 'Image : ' + m.credit : m.title); ok = true; }
+    if (m.type === 'image' && /^(https:\/\/|\/api\/gimg\/)/.test(m.url || '')) { const im = new Image(); im.alt = S(m.title, 80); im.referrerPolicy = 'no-referrer'; im.onerror = () => { if (o.contains(im)) hideOrb(); }; im.src = m.url; o.appendChild(im); cap(m.credit ? 'Image : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'video' && /^https:\/\/www\.youtube-nocookie\.com\/embed\//.test(m.embed || '')) { o.appendChild(ytFrame(m.embed + '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1', S(m.title, 80))); cap(m.title); ok = true; }
+    else if (m.type === 'video' && /^https:\/\/(www\.dailymotion\.com\/embed\/video\/|archive\.org\/embed\/|[^\/]+\/videos\/embed\/)/.test(m.embed || '')) { o.appendChild(ytFrame(m.embed, S(m.title, 80))); cap(m.credit ? S(m.title, 60) + ' (' + m.credit + ')' : m.title); ok = true; }
     else if (m.type === 'video' && /^https:\/\//.test(m.file || '')) { const v = document.createElement('video'); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.controls = true; if (/^https:\/\//.test(m.poster || '')) v.poster = m.poster; v.onerror = () => { if (o.contains(v)) hideOrb(); }; v.src = m.file; o.appendChild(v); const pb = document.createElement('button'); pb.type = 'button'; pb.className = 'obtn mplay'; pb.textContent = '▶'; pb.setAttribute('aria-label', 'Lire la vidéo'); pb.hidden = true; v.addEventListener('play', () => { pb.hidden = true; }); v.addEventListener('pause', () => { pb.hidden = false; }); pb.addEventListener('click', e => { e.stopPropagation(); v.muted = bigOn ? false : v.muted; v.play().catch(() => { }); }); o.appendChild(pb); const pr = v.play(); if (pr && pr.catch) pr.catch(() => { pb.hidden = false; }); cap(m.credit ? 'Vidéo : ' + m.credit : m.title); ok = true; }
     else if (m.type === 'anim') { const d = document.createElement('div'); o.appendChild(d); cstage.classList.add('explain'); renderAnim(d, m); cap(m.title); ok = true; }
-    else if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) {
+    else if (m.type === 'file' && /^\/api\/(dl\?|gf\/)/.test(m.dl || '')) {
       const fc = document.createElement('div'); fc.className = 'fcard'; const ic = document.createElement('div'); ic.className = 'fic'; ic.textContent = '📄'; fc.appendChild(ic); o.appendChild(fc);
       const a = document.createElement('a'); a.className = 'obtn mplay fdl'; a.href = m.dl; a.setAttribute('download', ''); a.textContent = '⬇'; a.setAttribute('aria-label', 'Télécharger ' + S(m.title, 60));
       a.addEventListener('click', e => { e.stopPropagation(); try { const lib = JSON.parse(localStorage.bobiLib || '[]'); lib.push({ title: S(m.title, 90), format: m.format, t: Date.now() }); localStorage.bobiLib = JSON.stringify(lib.slice(-100)); } catch (x) { } });
@@ -1109,12 +1111,25 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   }
   function hideOrb() { clearTimeout(orbTimer); toggleBig(false); if (orbAudio) { try { orbAudio.pause(); } catch (e) { } orbAudio = null; } cstage.classList.remove('explain'); const o = orbEl; setTimeout(() => { if (o && !cstage.classList.contains('explain')) { stopAnims(); o.innerHTML = ''; } }, 700); }
   function orbLater() { clearTimeout(orbTimer); if (!cstage.classList.contains('explain') || !orbEl) return; if (orbEl.querySelector('video,iframe')) { unmuteOrb(); return; } if (orbEl.dataset.music) return; orbTimer = setTimeout(hideOrb, 9000); }
+  function embedCard(m) {
+    const c = document.createElement('div'); c.className = 'simc'; c.innerHTML = '<div class="sh"><span class="st1"></span><b></b></div>';
+    c.querySelector('.st1').textContent = m.kind === 'map' ? '🗺️ Carte' : '🧪 PhET'; c.querySelector('b').textContent = S(m.title, 70);
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms'); f.setAttribute('allow', 'fullscreen'); f.setAttribute('title', S(m.title, 70)); f.src = m.src; if (m.kind === 'map') f.style.height = '300px'; c.appendChild(f);
+    if (m.credit) { const k = document.createElement('div'); k.className = 'sh'; k.style.cssText = 'font-size:12px;color:#9aa0aa;padding:6px 14px'; k.textContent = S(m.credit, 90); c.appendChild(k); }
+    return c;
+  }
   function simCard(m) {
     const c = document.createElement('div'); c.className = 'simc';
     c.innerHTML = '<div class="sh"><span class="st1">🧪 Simulation</span><b></b><button type="button" class="sr" aria-label="Relancer la simulation">↻</button></div>';
     c.querySelector('b').textContent = S(m.title, 70);
     const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', S(m.title, 70) || 'Simulation'); f.srcdoc = m.html; c.appendChild(f);
     c.querySelector('.sr').addEventListener('click', () => { f.srcdoc = m.html; });
+    let fixes = 0; const lab = c.querySelector('.st1'), onMsg = ev => {
+      if (!document.contains(c)) { removeEventListener('message', onMsg); return; }
+      if (ev.source !== f.contentWindow || !ev.data || ev.data.bobiSim !== 'error' || fixes >= 1) return; fixes++; lab.textContent = '🛠 Je répare…';
+      fetch('/api/simfix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: m.html, error: String(ev.data.msg || '').slice(0, 250), title: m.title }) })
+        .then(r => r.ok ? r.json() : Promise.reject()).then(j => { if (j && j.html) { m.html = j.html; f.srcdoc = j.html; } lab.textContent = '🧪 Simulation'; }).catch(() => { lab.textContent = '🧪 Simulation'; });
+    }; addEventListener('message', onMsg);
     return c;
   }
   function fileCard(m) {
@@ -1129,8 +1144,9 @@ Réponds UNIQUEMENT par un objet JSON : {"beats":[...],"next":[...]}
   function presentMedia(m, block) {
     if (!m) return false;
     if (ORB_TYPES.includes(m.type)) { if (showOrb(m)) { fx('fig'); return true; } return false; }
+    if (m.type === 'embedcard' && m.src) { block.appendChild(embedCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     if (m.type === 'sim' && m.html) { block.appendChild(simCard(m)); fx('fig'); follow(); setTimeout(follow, 350); return true; }
-    if (m.type === 'file' && /^\/api\/dl\?/.test(m.dl || '')) { const c = fileCard(m); block.appendChild(c); fx('fig'); follow(); setTimeout(follow, 350); return true; }
+    if (m.type === 'file' && /^\/api\/(dl\?|gf\/)/.test(m.dl || '')) { const c = fileCard(m); block.appendChild(c); fx('fig'); follow(); setTimeout(follow, 350); return true; }
     const fig = buildFigure(m); if (fig) { block.appendChild(fig); fx('fig'); follow(); setTimeout(follow, 350); return true; } return false;
   }
 
